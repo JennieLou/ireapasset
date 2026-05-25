@@ -70,11 +70,13 @@ const state = {
   mode: "landing",
   webPage: "asset",
   mobilePage: "home",
+  assetOpen: true,
   setupOpen: true,
   template: {
     templateType: "asset-label",
     size: "medium",
     codeType: "qr",
+    qrContent: "url",
     showLogo: false,
     preview: false
   },
@@ -82,7 +84,9 @@ const state = {
   mobileSheet: false,
   mobileOptions: {
     size: "medium",
-    codeType: "qr"
+    codeType: "qr",
+    qrContent: "url",
+    showLogo: false
   },
   massSelected: new Set(),
   massFiltered: false,
@@ -111,6 +115,7 @@ function getDefaultOptions() {
   return {
     size: state.template.size,
     codeType: state.template.codeType,
+    qrContent: state.template.qrContent,
     showLogo: state.template.showLogo
   };
 }
@@ -125,6 +130,10 @@ function labelSizeLabel(size) {
 
 function codeTypeLabel(codeType) {
   return codeType === "qr" ? "QR Code" : "Barcode";
+}
+
+function qrContentLabel(qrContent) {
+  return qrContent === "asset-code" ? "Asset Code" : "Asset Detail URL";
 }
 
 function templateTypeLabel(templateType) {
@@ -203,7 +212,7 @@ function webPageMeta() {
     return { title: "Print Templates", breadcrumb: "Home <span>/</span> Setup <span>/</span> Print Templates" };
   }
   if (state.webPage === "mass") {
-    return { title: "Mass Print Labels", breadcrumb: "Home <span>/</span> Asset <span>/</span> Mass Print Labels" };
+    return { title: "Mass Print Labels", breadcrumb: "Home <span>/</span> Asset <span>/</span> Print Labels" };
   }
   if (state.webPage === "preview") {
     return { title: "Label Preview", breadcrumb: "Home <span>/</span> Asset <span>/</span> Label Preview" };
@@ -214,6 +223,7 @@ function webPageMeta() {
 function renderSidebar() {
   const isAsset = state.webPage === "asset" || state.webPage === "mass" || state.webPage === "preview";
   const isTemplates = state.webPage === "templates";
+  const assetOpen = state.assetOpen || isAsset;
   const setupOpen = state.setupOpen || isTemplates;
   return `
     <aside class="web-sidebar">
@@ -232,7 +242,13 @@ function renderSidebar() {
       </div>
       <nav class="side-nav">
         <button class="side-item" data-action="web-page" data-page="home"><span class="side-icon">H</span>Home</button>
-        <button class="side-item ${isAsset ? "active" : ""}" data-action="web-page" data-page="asset"><span class="side-icon">A</span>Asset</button>
+        <div class="side-section">
+          <button class="side-item ${isAsset ? "active" : ""}" data-action="toggle-asset"><span class="side-icon">A</span>Asset <span class="side-caret">${assetOpen ? "v" : ">"}</span></button>
+          ${assetOpen ? `
+            <button class="side-subitem ${state.webPage === "asset" ? "active" : ""}" data-action="web-page" data-page="asset">Asset List</button>
+            <button class="side-subitem ${state.webPage === "mass" ? "active" : ""}" data-action="web-page" data-page="mass">Print Labels</button>
+          ` : ""}
+        </div>
         <button class="side-item" data-action="mock-only"><span class="side-icon">G</span>Agreement</button>
         <button class="side-item" data-action="mock-only"><span class="side-icon">O</span>Operations</button>
         <div class="side-section">
@@ -286,7 +302,6 @@ function renderAssetList() {
       <div class="action-row">
         <button class="btn primary" data-action="mock-only">+ New Asset</button>
         <button class="btn primary" data-action="mock-only">+ Import Asset</button>
-        <button class="btn primary" data-action="web-page" data-page="mass">+ Print Labels</button>
       </div>
       <div class="filter-grid">
         <label>Location</label>${selectHtml("location")}
@@ -392,6 +407,15 @@ function renderPrintTemplates() {
               ${option("barcode", "Barcode", state.template.codeType)}
             </select>
           </div>
+          ${state.template.codeType === "qr" ? `
+            <div class="settings-field">
+              <label>QR Code Content</label>
+              <select class="form-control" data-field="template-qrContent">
+                ${option("url", "Asset Detail URL", state.template.qrContent)}
+                ${option("asset-code", "Asset Code", state.template.qrContent)}
+              </select>
+            </div>
+          ` : ""}
           <div class="settings-field">
             <label>Show Company Logo</label>
             <label class="plain-check">
@@ -494,6 +518,15 @@ function renderPrintModal() {
               ${option("barcode", "Barcode", options.codeType)}
             </select>
           </div>
+          ${options.codeType === "qr" ? `
+            <div class="field">
+              <label>QR Code Content</label>
+              <select class="form-control" data-field="modal-qr">
+                ${option("url", "Asset Detail URL", options.qrContent)}
+                ${option("asset-code", "Asset Code", options.qrContent)}
+              </select>
+            </div>
+          ` : ""}
           <div class="field">
             <label>Show Company Logo</label>
             <label class="plain-check modal-check">
@@ -543,7 +576,8 @@ function renderLabel(asset, options, includeScaleClass) {
   const code = options.codeType;
   const showCompany = size === "large" && Boolean(options.showLogo);
   const labelClass = `asset-label label-${size} ${code === "barcode" ? "label-barcode" : "label-qr"}${includeScaleClass ? "" : ""}`;
-  const codeArt = code === "qr" ? `<div class="code-art qr-art" title="QR URL: https://asset.ireappos.com/apps/asset/view/${asset.id}"></div>` : `<div class="code-art barcode-art" title="Barcode: ${asset.code}"></div>`;
+  const qrValue = options.qrContent === "asset-code" ? asset.code : `https://asset.ireappos.com/apps/asset/view/${asset.id}`;
+  const codeArt = code === "qr" ? `<div class="code-art qr-art" title="QR Content: ${qrValue}"></div>` : `<div class="code-art barcode-art" title="Barcode: ${asset.code}"></div>`;
   const lines = [
     `<strong>${asset.code}</strong>`,
     `<div>${asset.description}</div>`
@@ -719,6 +753,15 @@ function renderMobileTemplates() {
             ${option("barcode", "Barcode", state.template.codeType)}
           </select>
         </div>
+        ${state.template.codeType === "qr" ? `
+          <div class="mobile-field">
+            <label>QR Code Content</label>
+            <select class="mobile-select" data-field="template-qrContent">
+              ${option("url", "Asset Detail URL", state.template.qrContent)}
+              ${option("asset-code", "Asset Code", state.template.qrContent)}
+            </select>
+          </div>
+        ` : ""}
         <label class="mobile-check">
           <input type="checkbox" data-field="template-logo" ${state.template.showLogo ? "checked" : ""} />
           Show company logo
@@ -772,7 +815,10 @@ function renderMobileSheet() {
   return `
     <div class="bottom-sheet-backdrop">
       <div class="bottom-sheet">
-        <h3>Print Label Options</h3>
+        <div class="sheet-title">
+          <h3>Print Label Options</h3>
+          <button class="info-button" data-action="mobile-print-info" title="Mass print information">i</button>
+        </div>
         <div class="mobile-field">
           <label>Label Size</label>
           <div class="mobile-segment">
@@ -788,6 +834,15 @@ function renderMobileSheet() {
             ${mobileSegment("codeType", "barcode", "Barcode")}
           </div>
         </div>
+        ${state.mobileOptions.codeType === "qr" ? `
+          <div class="mobile-field">
+            <label>QR Code Content</label>
+            <select class="mobile-select" data-field="mobile-print-qr">
+              ${option("url", "Asset Detail URL", state.mobileOptions.qrContent)}
+              ${option("asset-code", "Asset Code", state.mobileOptions.qrContent)}
+            </select>
+          </div>
+        ` : ""}
         <label class="mobile-check">
           <input type="checkbox" data-field="mobile-print-logo" ${state.mobileOptions.showLogo ? "checked" : ""} />
           Show company logo
@@ -848,6 +903,12 @@ document.addEventListener("click", (event) => {
 
   if (action === "toggle-setup") {
     state.setupOpen = !state.setupOpen;
+    render();
+    return;
+  }
+
+  if (action === "toggle-asset") {
+    state.assetOpen = !state.assetOpen;
     render();
     return;
   }
@@ -954,6 +1015,11 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "mobile-print-info") {
+    showToast("Mass label printing is available from Web > Asset > Print Labels.");
+    return;
+  }
+
   if (action === "mobile-preview") {
     state.mobileSheet = false;
     setState({ mobilePage: "preview" });
@@ -979,6 +1045,11 @@ document.addEventListener("change", (event) => {
     render();
   }
 
+  if (field === "template-qrContent") {
+    state.template.qrContent = event.target.value;
+    render();
+  }
+
   if (field === "template-type") {
     state.template.templateType = event.target.value;
     state.template.preview = false;
@@ -996,6 +1067,11 @@ document.addEventListener("change", (event) => {
 
   if (field === "modal-code") {
     state.modal.options.codeType = event.target.value;
+    render();
+  }
+
+  if (field === "modal-qr") {
+    state.modal.options.qrContent = event.target.value;
   }
 
   if (field === "modal-logo") {
@@ -1004,6 +1080,11 @@ document.addEventListener("change", (event) => {
 
   if (field === "mobile-print-logo") {
     state.mobileOptions.showLogo = event.target.checked;
+    render();
+  }
+
+  if (field === "mobile-print-qr") {
+    state.mobileOptions.qrContent = event.target.value;
     render();
   }
 });
