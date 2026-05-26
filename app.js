@@ -48,7 +48,8 @@ const assets = [
     location: "Head Office",
     department: "Finance",
     category: "Electronics",
-    status: "Active",
+    status: "Retired",
+    retiredReason: "Sold",
     external: "FIN-PRN-001"
   },
   {
@@ -98,6 +99,21 @@ const transfers = [
   }
 ];
 
+const retirementNo = "RET-2026050001";
+const retirementDefaults = {
+  no: retirementNo,
+  date: "26-05-2026",
+  createdAt: "26-05-2026 15:20",
+  user: "Jennie",
+  reason: "Scrapped",
+  remarks: "Damaged beyond repair",
+  assetIds: [215, 216, 217]
+};
+
+const retirements = [
+  retirementDefaults
+];
+
 const state = {
   mode: "landing",
   webPage: "asset",
@@ -139,6 +155,15 @@ const state = {
   transferSelected: new Set([215]),
   transferViewIds: [...transferDefaults.assetIds],
   transferViewNo: transferDefaults.no,
+  selectedAssetId: 215,
+  retirementSelected: new Set([215]),
+  retirementViewIds: [...retirementDefaults.assetIds],
+  retirementViewNo: retirementDefaults.no,
+  savedRetirement: null,
+  retirementReason: "Scrapped",
+  retiredAssets: new Set([218]),
+  retirementReasonByAsset: { 218: "Sold" },
+  transactionPreviewType: "transfer",
   preview: null,
   toast: ""
 };
@@ -251,7 +276,7 @@ function renderWeb() {
           ${renderWebPage()}
         </section>
       </main>
-      ${state.modal === "assetLookup" ? renderAssetLookupModal() : state.modal ? renderPrintModal() : ""}
+      ${state.modal === "assetLookup" ? renderAssetLookupModal() : state.modal === "retirementAssetLookup" ? renderRetirementAssetLookupModal() : state.modal ? renderPrintModal() : ""}
       ${state.toast ? `<div class="mock-toast">${state.toast}</div>` : ""}
     </div>
   `;
@@ -267,8 +292,17 @@ function webPageMeta() {
   if (state.webPage === "transferView") {
     return { title: "View Transfer", breadcrumb: "Home <span>/</span> Operations <span>/</span> Transfer Asset <span>/</span> <strong>View Transfer</strong>" };
   }
+  if (state.webPage === "retirement") {
+    return { title: "Retirement Asset", breadcrumb: "Home <span>/</span> Operations <span>/</span> <strong>Retirement Asset</strong>" };
+  }
+  if (state.webPage === "retirementNew") {
+    return { title: "New Retirement", breadcrumb: "Home <span>/</span> Operations <span>/</span> Retirement Asset <span>/</span> <strong>New Retirement</strong>" };
+  }
+  if (state.webPage === "retirementView") {
+    return { title: "View Retirement", breadcrumb: "Home <span>/</span> Operations <span>/</span> Retirement Asset <span>/</span> <strong>View Retirement</strong>" };
+  }
   if (state.webPage === "transactionPreview") {
-    return { title: "Transaction PDF Preview", breadcrumb: "Home <span>/</span> Operations <span>/</span> Transfer Asset <span>/</span> <strong>PDF Preview</strong>" };
+    return { title: "Transaction PDF Preview", breadcrumb: "Home <span>/</span> Operations <span>/</span> <strong>PDF Preview</strong>" };
   }
   if (state.webPage === "assetDetail") {
     return { title: "Asset", breadcrumb: "Home <span>/</span> Asset <span>/</span> <strong>View Asset</strong>" };
@@ -287,7 +321,7 @@ function webPageMeta() {
 
 function renderSidebar() {
   const isAsset = state.webPage === "asset" || state.webPage === "assetDetail" || state.webPage === "mass" || state.webPage === "preview";
-  const isOperations = state.webPage === "transfer" || state.webPage === "transferNew" || state.webPage === "transferView";
+  const isOperations = state.webPage === "transfer" || state.webPage === "transferNew" || state.webPage === "transferView" || state.webPage === "retirement" || state.webPage === "retirementNew" || state.webPage === "retirementView" || state.webPage === "transactionPreview";
   const isTemplates = state.webPage === "templates";
   const assetOpen = state.assetOpen || isAsset;
   const operationsOpen = state.operationsOpen;
@@ -320,7 +354,8 @@ function renderSidebar() {
         <div class="side-section">
           <button class="side-item ${isOperations ? "active" : ""}" data-action="toggle-operations"><span class="side-icon">O</span>Operations <span class="side-caret">${operationsOpen ? "v" : ">"}</span></button>
           ${operationsOpen ? `
-            <button class="side-subitem ${isOperations ? "active" : ""}" data-action="web-page" data-page="transfer">Transfer Asset</button>
+            <button class="side-subitem ${state.webPage === "transfer" || state.webPage === "transferNew" || state.webPage === "transferView" ? "active" : ""}" data-action="web-page" data-page="transfer">Transfer Asset</button>
+            <button class="side-subitem ${state.webPage === "retirement" || state.webPage === "retirementNew" || state.webPage === "retirementView" ? "active" : ""}" data-action="web-page" data-page="retirement">Retirement Asset</button>
           ` : ""}
         </div>
         <div class="side-section">
@@ -347,6 +382,9 @@ function renderWebPage() {
   if (state.webPage === "transfer") return renderTransferList();
   if (state.webPage === "transferNew") return renderTransferNew();
   if (state.webPage === "transferView") return renderTransferView();
+  if (state.webPage === "retirement") return renderRetirementList();
+  if (state.webPage === "retirementNew") return renderRetirementNew();
+  if (state.webPage === "retirementView") return renderRetirementView();
   if (state.webPage === "transactionPreview") return renderTransactionPdfPreview();
   if (state.webPage === "assetDetail") return renderAssetDetail();
   if (state.webPage === "templates") return renderPrintTemplates();
@@ -423,12 +461,13 @@ function selectHtml(name) {
     location: ["", "Head Office", "Warehouse"],
     department: ["", "IT", "Admin", "Finance"],
     category: ["", "Electronics", "Furniture"],
-    status: ["", "Active", "Inactive"]
+    status: ["", "Active", "Inactive", "Retired"]
   };
   return `<select aria-label="${name}">${map[name].map((item) => `<option>${item}</option>`).join("")}</select>`;
 }
 
 function renderAssetRow(asset) {
+  const retired = isRetiredAsset(asset);
   return `
     <tr>
       <td><div class="photo-box">NO IMAGE<br />AVAILABLE</div></td>
@@ -439,12 +478,12 @@ function renderAssetRow(asset) {
       <td>${asset.location}</td>
       <td>${asset.department}</td>
       <td>${asset.category}</td>
-      <td><span class="status">${asset.status}</span></td>
+      <td><span class="status ${retired ? "retired" : "green"}">${assetStatusLabel(asset)}</span></td>
       <td class="action-cell">
         <div class="action-stack">
-          <button class="btn icon success" title="View" data-action="asset-view">View</button>
+          <button class="btn icon success" title="View" data-action="asset-view" data-id="${asset.id}">View</button>
           <button class="btn icon secondary" title="Edit" data-action="mock-only">Edit</button>
-          <button class="btn icon warning" title="Deactivate" data-action="mock-only">Deactivate</button>
+          ${retired ? "" : `<button class="btn icon warning" title="Deactivate" data-action="mock-only">Deactivate</button>`}
           <button class="btn icon dark" title="Duplicate" data-action="mock-only">Duplicate</button>
           <button class="btn icon primary print-action" title="Print Label" data-action="single-print" data-id="${asset.id}">Print Label</button>
         </div>
@@ -454,7 +493,7 @@ function renderAssetRow(asset) {
 }
 
 function renderAssetDetail() {
-  const asset = assets[0];
+  const asset = selectedAsset();
   return `
     <div class="content-card">
       <div class="settings-actions">
@@ -466,7 +505,7 @@ function renderAssetDetail() {
           <tbody>
             <tr><th>Asset Code</th><td>${asset.code}</td></tr>
             <tr><th>Description</th><td>${asset.description}</td></tr>
-            <tr><th>Status</th><td><span class="status">${asset.status}</span></td></tr>
+            <tr><th>Status</th><td><span class="status ${isRetiredAsset(asset) ? "retired" : "green"}">${assetStatusLabel(asset)}</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -487,6 +526,8 @@ function webAssetTab(value, label) {
 }
 
 function renderAssetInfo(asset) {
+  const statusLabel = assetStatusLabel(asset);
+  const retired = isRetiredAsset(asset);
   if (state.assetTab !== "detail") {
     return `<div class="empty-state">Mockup only</div>`;
   }
@@ -496,23 +537,29 @@ function renderAssetInfo(asset) {
         <tr><th>External Code</th><td>${asset.external}</td><th>Brand</th><td>${asset.brand}</td></tr>
         <tr><th>Model</th><td>${asset.model}</td><th>Serial No</th><td>${asset.serial}</td></tr>
         <tr><th>Location</th><td>${asset.location}</td><th>Department</th><td>${asset.department}</td></tr>
-        <tr><th>Category</th><td>${asset.category}</td><th>Status</th><td><span class="status">${asset.status}</span></td></tr>
+        <tr><th>Category</th><td>${asset.category}</td><th>Status</th><td><span class="status ${retired ? "retired" : "green"}">${statusLabel}</span></td></tr>
       </tbody>
     </table>
     <div class="asset-bottom-actions">
       <button class="btn secondary" data-action="mock-only">Edit</button>
       <button class="btn dark" data-action="mock-only">Duplicate</button>
-      <button class="btn warning" data-action="mock-only">Deactivate</button>
+      ${retired ? "" : `<button class="btn warning" data-action="mock-only">Deactivate</button>`}
       <button class="btn primary" data-action="single-print" data-id="${asset.id}">Print</button>
     </div>
   `;
+}
+
+function assetStatusLabel(asset) {
+  return isRetiredAsset(asset)
+    ? `Retired - ${state.retirementReasonByAsset[asset.id] || asset.retiredReason || retirementDefaults.reason}`
+    : asset.status;
 }
 
 function renderAssetHistory() {
   return `
     <div class="history-filters">
       <label>Type</label>
-      <select><option>All Types</option><option>Transfer Asset</option><option>Create Asset</option></select>
+      <select><option>All Types</option><option>Retirement Asset</option><option>Transfer Asset</option><option>Create Asset</option></select>
       <label>User</label>
       <select><option>All Users</option><option>Jennie</option></select>
       <label>Date</label>
@@ -534,6 +581,12 @@ function renderAssetHistory() {
       </thead>
       <tbody>
         <tr>
+          <td>Retirement Asset</td>
+          <td>${retirementDefaults.createdAt}</td>
+          <td>Jennie</td>
+          <td><button class="link-button" data-action="view-retirement">${retirementNo}</button></td>
+        </tr>
+        <tr>
           <td>Transfer Asset</td>
           <td>${transferDefaults.createdAt}</td>
           <td>Jennie</td>
@@ -548,7 +601,7 @@ function renderAssetHistory() {
       </tbody>
     </table>
     <div class="table-footer">
-      <span>Showing 1 To 2 Of 2 Entries</span>
+      <span>Showing 1 To 3 Of 3 Entries</span>
       <div class="pagination"><button>Previous</button><button>1</button><button>Next</button></div>
     </div>
   `;
@@ -556,7 +609,7 @@ function renderAssetHistory() {
 
 function selectedTransferAssets() {
   const ids = state.transferSelected.size ? [...state.transferSelected] : [];
-  return assets.filter((asset) => ids.includes(asset.id));
+  return assets.filter((asset) => ids.includes(asset.id) && !state.retiredAssets.has(asset.id));
 }
 
 function viewTransferAssets() {
@@ -568,10 +621,33 @@ function currentTransfer() {
   return transfers.find((transfer) => transfer.no === state.transferViewNo) || transferDefaults;
 }
 
+function currentRetirement() {
+  if (state.savedRetirement && state.savedRetirement.no === state.retirementViewNo) return state.savedRetirement;
+  return retirements.find((retirement) => retirement.no === state.retirementViewNo) || retirementDefaults;
+}
+
 function transferRouteLabel(transfer) {
   return transfer.type === "Department"
     ? `${transfer.fromDepartment} -> ${transfer.toDepartment}`
     : `${transfer.fromLocation} -> ${transfer.toLocation}`;
+}
+
+function selectedRetirementAssets() {
+  const ids = state.retirementSelected.size ? [...state.retirementSelected] : [];
+  return assets.filter((asset) => ids.includes(asset.id) && !state.retiredAssets.has(asset.id));
+}
+
+function viewRetirementAssets() {
+  const ids = state.retirementViewIds.length ? state.retirementViewIds : retirementDefaults.assetIds;
+  return assets.filter((asset) => ids.includes(asset.id));
+}
+
+function selectedAsset() {
+  return assets.find((asset) => asset.id === state.selectedAssetId) || assets[0];
+}
+
+function isRetiredAsset(asset) {
+  return asset.status === "Retired" || state.retiredAssets.has(asset.id);
 }
 
 function renderTransferList() {
@@ -581,10 +657,9 @@ function renderTransferList() {
         <button class="btn primary" data-action="new-transfer">+ New Transfer</button>
       </div>
       <div class="filter-grid transfer-filter">
-        <label>Period</label><input value="May 2026" aria-label="Period" />
+        <label>Period</label><input value="01-05-2026 - 31-05-2026" aria-label="Period" />
         <label>Type</label><select aria-label="Type"><option>All Types</option><option>Location</option><option>Department</option></select>
         <label>User</label><select aria-label="User"><option>All Users</option><option>Jennie</option></select>
-        <label>Search</label><input aria-label="Search Transfer" />
         <button class="btn primary" data-action="mock-only">Filter</button>
       </div>
       <div class="toolbar">
@@ -680,7 +755,7 @@ function renderTransferNew() {
           </select>
         `}
       </div>
-      <div class="section-divider"><span>Associated Assets</span></div>
+      <div class="section-divider"><span>Asset List</span></div>
       <div class="associated-assets">
         <label>Asset Code</label>
         <div class="asset-code-add">
@@ -772,7 +847,163 @@ function renderTransferView() {
   `;
 }
 
+function renderRetirementList() {
+  return `
+    <div class="content-card">
+      <div class="action-row">
+        <button class="btn primary" data-action="new-retirement">+ New Retirement</button>
+      </div>
+      <div class="filter-grid retirement-filter">
+        <label>Period</label><input value="01-05-2026 - 31-05-2026" aria-label="Period" />
+        <label>Reason</label>${retirementReasonSelect()}
+        <label>User</label><select aria-label="User"><option>All Users</option><option>Jennie</option></select>
+        <button class="btn primary" data-action="mock-only">Filter</button>
+      </div>
+      <div class="toolbar">
+        <button class="btn" data-action="mock-only">Column Settings</button>
+        <button class="btn" data-action="mock-only">CSV</button>
+        <button class="btn" data-action="mock-only">Excel</button>
+        <button class="btn" data-action="mock-only">PDF</button>
+        <span class="show">Show</span>
+        <select aria-label="Show Entries"><option>10</option><option>25</option><option>50</option></select>
+        <span>Entries</span>
+        <span class="spacer"></span>
+        <label>Search : <input aria-label="Search" /></label>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th class="sort">Retirement No</th><th>Date</th><th>Asset Count</th><th>Reason</th><th>Remarks</th><th>Created By</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          ${retirements.map((retirement) => `
+            <tr>
+              <td>${retirement.no}</td>
+              <td>${retirement.date}</td>
+              <td>${retirement.assetIds.length} Assets</td>
+              <td>${retirement.reason}</td>
+              <td>${retirement.remarks}</td>
+              <td>${retirement.user}</td>
+              <td><button class="btn icon success" data-action="view-retirement" data-retirement="${retirement.no}">View</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      <div class="table-footer">
+        <span>Showing 1 To ${retirements.length} Of ${retirements.length} Entries</span>
+        <div class="pagination"><button>Previous</button><button>1</button><button>Next</button></div>
+      </div>
+    </div>
+  `;
+}
+
+function retirementReasonSelect(field) {
+  const attr = field ? ` data-field="${field}"` : "";
+  const classAttr = field ? ` class="form-control"` : "";
+  const selectedValue = field ? state.retirementReason : "";
+  return `
+    <select aria-label="Retirement Reason"${classAttr}${attr}>
+      ${field ? "" : option("", "All Reasons", selectedValue)}
+      ${option("Sold", "Sold", selectedValue)}
+      ${option("Damaged", "Damaged", selectedValue)}
+      ${option("Obsolete", "Obsolete", selectedValue)}
+      ${option("Donated", "Donated", selectedValue)}
+      ${option("Scrapped", "Scrapped", selectedValue)}
+    </select>
+  `;
+}
+
+function renderRetirementNew() {
+  const selected = selectedRetirementAssets();
+  return `
+    <div class="content-card">
+      <div class="settings-actions">
+        <button class="btn primary" data-action="save-retirement">Save Retirement</button>
+        <button class="btn ghost" data-action="web-page" data-page="retirement">Back to list</button>
+      </div>
+      <div class="section-divider"><span>Header</span></div>
+      <div class="agreement-form">
+        <label>Retirement No</label><input class="form-control readonly" value="${retirementNo}" readonly />
+        <label>Date</label><input class="form-control" value="26-05-2026" />
+        <label>Remarks</label><textarea class="form-control" rows="3">${retirementDefaults.remarks}</textarea>
+      </div>
+      <div class="section-divider"><span>Retirement Info</span></div>
+      <div class="agreement-form">
+        <label>Retirement Reason</label>
+        ${retirementReasonSelect("retirement-reason")}
+      </div>
+      <div class="section-divider"><span>Asset List</span></div>
+      <div class="associated-assets">
+        <label>Asset Code</label>
+        <div class="asset-code-add">
+          <input class="form-control" placeholder="Enter asset code" aria-label="Asset Code" />
+          <button class="btn primary" data-action="open-retirement-asset-lookup">+</button>
+        </div>
+        <p>Press <kbd>Enter</kbd> To Add Asset</p>
+        <table class="data-table selected-table">
+          <thead>
+            <tr><th>Asset Code</th><th>Description</th><th>Current Location</th><th>Current Department</th><th>Remove Action</th></tr>
+          </thead>
+          <tbody>
+            ${selected.length ? selected.map(renderRetirementSelectedRow).join("") : `<tr><td colspan="5">No assets selected.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderRetirementSelectedRow(asset) {
+  return `
+    <tr>
+      <td>${asset.code}</td>
+      <td>${asset.description}</td>
+      <td>${asset.location}</td>
+      <td>${asset.department}</td>
+      <td><button class="btn icon danger small-icon" data-action="remove-retirement-asset" data-id="${asset.id}">Remove</button></td>
+    </tr>
+  `;
+}
+
+function renderRetirementView() {
+  const retirement = currentRetirement();
+  const retirementAssets = viewRetirementAssets();
+  return `
+    <div class="content-card">
+      <div class="settings-actions view-actions">
+        <button class="btn ghost" data-action="web-page" data-page="retirement">Back to List</button>
+        <button class="btn primary" data-action="export-retirement-pdf">Export PDF</button>
+      </div>
+      <div class="transfer-view-grid">
+        <section>
+          <h2 class="content-title">Header Info</h2>
+          <table class="info-table">
+            <tbody>
+              <tr><th>Retirement No</th><td>${retirement.no}</td></tr>
+              <tr><th>Date</th><td>${retirement.date}</td></tr>
+              <tr><th>Created By</th><td>${retirement.user}</td></tr>
+              <tr><th>Retirement Reason</th><td>${retirement.reason}</td></tr>
+              <tr><th>Remarks</th><td>${retirement.remarks}</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+      <div class="transfer-section">
+        <h2 class="content-title">Asset List</h2>
+        <table class="data-table">
+          <thead>
+            <tr><th>Asset Code</th><th>Description</th><th>Previous Location</th><th>Previous Department</th></tr>
+          </thead>
+          <tbody>
+            ${retirementAssets.map((asset) => `<tr><td>${asset.code}</td><td>${asset.description}</td><td>${asset.location}</td><td>${asset.department}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function renderAssetLookupModal() {
+  const activeAssets = assets.slice(0, 3).filter((asset) => !state.retiredAssets.has(asset.id));
   return `
     <div class="modal-backdrop">
       <div class="modal asset-modal" role="dialog" aria-modal="true" aria-label="Asset">
@@ -799,7 +1030,7 @@ function renderAssetLookupModal() {
               <tr><th class="sort">Asset Code</th><th>Description</th><th>Brand</th><th>Model</th><th>Location</th><th>Department</th><th>Category</th></tr>
             </thead>
             <tbody>
-              ${assets.slice(0, 3).map((asset) => `
+              ${activeAssets.map((asset) => `
                 <tr data-action="toggle-transfer-asset" data-id="${asset.id}">
                   <td>${asset.code}</td><td>${asset.description}</td><td>${asset.brand}</td><td>${asset.model}</td>
                   <td>${asset.location}</td><td>${asset.department}</td><td>${asset.category}</td>
@@ -808,7 +1039,52 @@ function renderAssetLookupModal() {
             </tbody>
           </table>
           <div class="table-footer">
-            <span>Showing 1 To 3 Of 3 Entries</span>
+            <span>Showing 1 To ${activeAssets.length} Of ${activeAssets.length} Entries</span>
+            <div class="pagination"><button>Previous</button><button>1</button><button>Next</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRetirementAssetLookupModal() {
+  const activeAssets = assets.slice(0, 3).filter((asset) => asset.status === "Active" && !state.retiredAssets.has(asset.id));
+  return `
+    <div class="modal-backdrop">
+      <div class="modal asset-modal" role="dialog" aria-modal="true" aria-label="Asset">
+        <div class="modal-head">
+          Asset
+          <button class="modal-close" data-action="close-modal">x</button>
+        </div>
+        <div class="modal-body">
+          <div class="asset-modal-toolbar">
+            <span>Show</span>
+            <select aria-label="Show Entries"><option>10</option></select>
+            <span>Entries</span>
+            <span class="spacer"></span>
+            <label>Search : <input aria-label="Search Asset" /></label>
+          </div>
+          <div class="toolbar modal-export-toolbar">
+            <button class="btn" data-action="mock-only">Column Settings</button>
+            <button class="btn" data-action="mock-only">CSV</button>
+            <button class="btn" data-action="mock-only">Excel</button>
+            <button class="btn" data-action="mock-only">PDF</button>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th class="sort">Asset Code</th><th>Description</th><th>Location</th><th>Department</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              ${activeAssets.map((asset) => `
+                <tr data-action="toggle-retirement-asset" data-id="${asset.id}">
+                  <td>${asset.code}</td><td>${asset.description}</td><td>${asset.location}</td><td>${asset.department}</td><td>${asset.status}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+          <div class="table-footer">
+            <span>Showing 1 To ${activeAssets.length} Of ${activeAssets.length} Entries</span>
             <div class="pagination"><button>Previous</button><button>1</button><button>Next</button></div>
           </div>
         </div>
@@ -818,7 +1094,7 @@ function renderAssetLookupModal() {
 }
 
 function renderTransactionPdfPreview() {
-  const transfer = currentTransfer();
+  const transaction = state.transactionPreviewType === "retirement" ? currentRetirement() : currentTransfer();
   return `
     <div class="content-card">
       <div class="preview-top">
@@ -826,20 +1102,23 @@ function renderTransactionPdfPreview() {
         <button class="btn primary" data-action="mock-only">Export PDF</button>
       </div>
       <div class="transaction-preview-canvas">
-        ${renderTransactionDocument(transfer)}
+        ${renderTransactionDocument(transaction)}
       </div>
     </div>
   `;
 }
 
 function renderTransactionDocument(transfer) {
-  const isTransfer = Boolean(transfer);
-  const docNo = isTransfer ? transfer.no : "XXX-YYYYMMAAAA";
-  const docDate = isTransfer ? transfer.date : "DD-YY-MMM";
-  const title = isTransfer ? "TRANSFER ASSET" : "TRANSACTION TITLE";
-  const rows = isTransfer
-    ? viewTransferAssets().map((asset, index) => `
-        <tr><td>${index + 1}</td><td>${asset.code}</td><td>${asset.description}</td><td>${transferRouteLabel(transfer)}</td></tr>
+  const isTransaction = Boolean(transfer);
+  const isRetirement = isTransaction && transfer.no.startsWith("RET-");
+  const isTransfer = isTransaction && transfer.no.startsWith("TRF-");
+  const docNo = isTransaction ? transfer.no : "XXX-YYYYMMAAAA";
+  const docDate = isTransaction ? transfer.date : "DD-YY-MMM";
+  const title = isRetirement ? "RETIREMENT ASSET" : isTransfer ? "TRANSFER ASSET" : "TRANSACTION TITLE";
+  const documentAssets = isRetirement ? viewRetirementAssets() : viewTransferAssets();
+  const rows = isTransaction
+    ? documentAssets.map((asset, index) => `
+        <tr><td>${index + 1}</td><td>${asset.code}</td><td>${asset.description}</td><td>${isRetirement ? transfer.reason : transferRouteLabel(transfer)}</td></tr>
       `).join("")
     : `<tr><td>1</td><td>Field 1</td><td>Field 2</td><td>Field 3</td></tr>`;
   return `
@@ -853,10 +1132,15 @@ function renderTransactionDocument(transfer) {
       </div>
       <section>
         <h3>Transaction Information</h3>
-        <p>- ${isTransfer ? `Transfer Type: ${transfer.type}` : "Header Field 1"}</p>
-        <p>- ${isTransfer ? `From: ${transfer.type === "Department" ? transfer.fromDepartment : transfer.fromLocation}` : "Header Field 2"}</p>
-        <p>- ${isTransfer ? `To: ${transfer.type === "Department" ? transfer.toDepartment : transfer.toLocation}` : "Header Field 3"}</p>
-        <p>- ${isTransfer ? `Remarks: ${transfer.remarks}` : "Remarks: Transaction remarks"}</p>
+        ${isRetirement ? `
+          <p>- Retirement Reason: ${transfer.reason}</p>
+          <p>- Remarks: ${transfer.remarks}</p>
+        ` : `
+          <p>- ${isTransfer ? `Transfer Type: ${transfer.type}` : "Header Field 1"}</p>
+          <p>- ${isTransfer ? `From: ${transfer.type === "Department" ? transfer.fromDepartment : transfer.fromLocation}` : "Header Field 2"}</p>
+          <p>- ${isTransfer ? `To: ${transfer.type === "Department" ? transfer.toDepartment : transfer.toLocation}` : "Header Field 3"}</p>
+          <p>- ${isTransfer ? `Remarks: ${transfer.remarks}` : "Remarks: Transaction remarks"}</p>
+        `}
       </section>
       <section>
         <h3>Table Content</h3>
@@ -867,8 +1151,8 @@ function renderTransactionDocument(transfer) {
       </section>
       <div class="created-block">
         <span>Created By</span>
-        <strong>Jennie</strong>
-        <small>${isTransfer ? transfer.createdAt : "26-05-2026 10:00"}</small>
+        <strong>${isTransaction ? transfer.user : "Jennie"}</strong>
+        <small>${isTransaction ? transfer.createdAt : "26-05-2026 10:00"}</small>
       </div>
       <footer class="transaction-footer">
         <span>Generated from iReap Asset</span>
@@ -1144,6 +1428,9 @@ function renderMobileScreen() {
   if (state.mobilePage === "transfer") return renderMobileTransferList();
   if (state.mobilePage === "transferNew") return renderMobileTransferNew();
   if (state.mobilePage === "transferView") return renderMobileTransferView();
+  if (state.mobilePage === "retirement") return renderMobileRetirementList();
+  if (state.mobilePage === "retirementNew") return renderMobileRetirementNew();
+  if (state.mobilePage === "retirementView") return renderMobileRetirementView();
   if (state.mobilePage === "transactionPreview") return renderMobileTransactionPreview();
   if (state.mobilePage === "setup") return renderMobileSetup();
   if (state.mobilePage === "mobileTemplates") return renderMobileTemplates();
@@ -1208,16 +1495,23 @@ function renderMobileAssets() {
       </div>
       <button class="mobile-add" data-action="mock-only">ADD</button>
       <div class="mobile-list-title">Asset List</div>
-      <button class="mobile-asset-card" data-action="mobile-page" data-page="detail">
-        <span class="mobile-photo">I</span>
-        <span>
-          <strong>TEST</strong>
-          <p>TEST</p>
-          <p>Head Office</p>
-        </span>
-        <span class="mobile-arrow">&gt;</span>
-      </button>
+      ${assets.map(renderMobileAssetCard).join("")}
     </div>
+  `;
+}
+
+function renderMobileAssetCard(asset) {
+  return `
+    <button class="mobile-asset-card" data-action="mobile-page" data-page="detail" data-id="${asset.id}">
+      <span class="mobile-photo">I</span>
+      <span>
+        <strong>${asset.code}</strong>
+        <p>${asset.description}</p>
+        <p>${asset.location}</p>
+        ${isRetiredAsset(asset) ? `<em>${assetStatusLabel(asset)}</em>` : ""}
+      </span>
+      <span class="mobile-arrow">&gt;</span>
+    </button>
   `;
 }
 
@@ -1226,6 +1520,7 @@ function renderMobileOperations() {
     ${mobileHeader("Operations", "home")}
     <div class="screen-content setup-list">
       ${setupItem("Transfer", "T", "setup-blue", "mobile-page", "transfer")}
+      ${setupItem("Retirement", "R", "setup-red", "mobile-page", "retirement")}
     </div>
   `;
 }
@@ -1408,14 +1703,131 @@ function renderMobileTransferView() {
 }
 
 function renderMobileTransactionPreview() {
-  const transfer = currentTransfer();
+  const transfer = state.transactionPreviewType === "retirement" ? currentRetirement() : currentTransfer();
   return `
-    ${mobileHeader("PDF Preview", "transferView")}
+    ${mobileHeader("PDF Preview", state.transactionPreviewType === "retirement" ? "retirementView" : "transferView")}
     <div class="screen-content mobile-transaction-preview">
       ${renderTransactionDocument(transfer)}
     </div>
     <div class="mobile-form-actions">
       <button class="btn primary" data-action="mock-only">Export PDF</button>
+    </div>
+  `;
+}
+
+function renderMobileRetirementList() {
+  return `
+    ${mobileHeader("Retirement", "operations")}
+    <div class="screen-content">
+      <div class="mobile-search-row transfer-mobile-search">
+        <div class="mobile-search"><span>Q</span><input placeholder="Search" /></div>
+        <button class="filter-plain" data-action="open-retirement-filter">F</button>
+      </div>
+      <button class="mobile-add" data-action="new-mobile-retirement">+ New Retirement</button>
+      <div class="mobile-list-title">Retirement List</div>
+      ${retirements.map(renderMobileRetirementCard).join("")}
+    </div>
+  `;
+}
+
+function renderMobileRetirementCard(retirement) {
+  return `
+    <button class="mobile-transfer-card" data-action="view-mobile-retirement" data-retirement="${retirement.no}">
+      <span class="mobile-transfer-no">${retirement.no}</span>
+      <span class="mobile-transfer-count">${retirement.assetIds.length} Assets</span>
+      <span class="mobile-transfer-route">Reason: ${retirement.reason}</span>
+      <span class="mobile-transfer-date">${retirement.date}</span>
+      <span class="mobile-transfer-user">${retirement.user}</span>
+      <span class="mobile-arrow">&gt;</span>
+    </button>
+  `;
+}
+
+function renderMobileRetirementNew() {
+  const selected = selectedRetirementAssets();
+  return `
+    ${mobileHeader("New Retirement", "retirement")}
+    <div class="screen-content mobile-transfer-form">
+      <section class="mobile-form-section">
+        <h2>Header</h2>
+        ${mobileLineInput("Retirement No", retirementNo, true)}
+        ${mobileLineInput("Date", "26-05-2026")}
+        <div class="mobile-line-field">
+          <label>Remarks</label>
+          <textarea rows="2">${retirementDefaults.remarks}</textarea>
+        </div>
+      </section>
+      <section class="mobile-form-section">
+        <h2>Retirement Info</h2>
+        <div class="mobile-line-field">
+          <label>Retirement Reason</label>
+          ${retirementReasonSelect("retirement-reason")}
+        </div>
+      </section>
+      <section class="mobile-form-section">
+        <h2>Assets</h2>
+        <div class="mobile-line-field asset-code-mobile">
+          <label>Asset Code</label>
+          <div>
+            <input placeholder="Enter asset code" />
+            <button class="qr-mini" data-action="mock-only" title="Scan QR">QR</button>
+            <button data-action="open-mobile-retirement-asset-picker" title="Add Asset">+</button>
+          </div>
+        </div>
+        <p class="mobile-helper">Press Enter To Add Asset</p>
+      </section>
+      <section class="mobile-form-section">
+        <h2>Selected Assets</h2>
+        <div class="mobile-selected-list">
+          ${selected.length ? selected.map(renderMobileRetirementSelectedAsset).join("") : `<div class="mobile-empty">No assets selected.</div>`}
+        </div>
+      </section>
+    </div>
+    <div class="mobile-form-actions">
+      <button class="btn ghost" data-action="mobile-page" data-page="retirement">Cancel</button>
+      <button class="btn primary" data-action="save-mobile-retirement">Save Retirement</button>
+    </div>
+  `;
+}
+
+function renderMobileRetirementSelectedAsset(asset) {
+  return `
+    <div class="mobile-selected-asset">
+      <strong>${asset.code}</strong>
+      <span>${asset.location}</span>
+      <span>${asset.department}</span>
+      <button data-action="remove-retirement-asset" data-id="${asset.id}" title="Remove">Del</button>
+    </div>
+  `;
+}
+
+function renderMobileRetirementView() {
+  const retirement = currentRetirement();
+  const retirementAssets = viewRetirementAssets();
+  return `
+    ${mobileHeader("Retirement", "retirement")}
+    <div class="screen-content mobile-transfer-view">
+      <section class="transfer-info-card">
+        <h2>Retirement Info</h2>
+        ${mobileInfo("Retirement No", retirement.no)}
+        ${mobileInfo("Date", retirement.date)}
+        ${mobileInfo("User", retirement.user)}
+        ${mobileInfo("Retirement Reason", retirement.reason)}
+        ${mobileInfo("Remarks", retirement.remarks)}
+      </section>
+      <h2 class="mobile-list-title">Asset List</h2>
+      <div class="mobile-selected-list">
+        ${retirementAssets.map((asset) => `
+          <div class="mobile-asset-transfer">
+            <strong>${asset.code}</strong>
+            <span>${asset.location}</span>
+            <span>${asset.department}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    <div class="mobile-form-actions">
+      <button class="btn primary" data-action="export-mobile-retirement-pdf">Export PDF</button>
     </div>
   `;
 }
@@ -1531,9 +1943,10 @@ function renderMobileTemplates() {
 }
 
 function renderMobileDetail() {
-  const asset = assets[0];
+  const asset = selectedAsset();
+  const retired = isRetiredAsset(asset);
   return `
-    ${mobileHeader("Asset - TEST", "assets")}
+    ${mobileHeader(`Asset - ${asset.code}`, "assets")}
     <div class="tabs">
       <button class="tab ${state.assetTab === "detail" ? "active" : ""}" data-action="asset-tab" data-tab="detail">Detail</button>
       <button class="tab ${state.assetTab === "history" ? "active" : ""}" data-action="asset-tab" data-tab="history">History</button>
@@ -1542,10 +1955,10 @@ function renderMobileDetail() {
     </div>
     ${state.assetTab === "history" ? renderMobileAssetHistory() : renderMobileAssetDetailBody(asset)}
     ${state.assetTab === "detail" ? `
-      <div class="bottom-actions">
+      <div class="bottom-actions ${retired ? "three" : ""}">
         <button data-action="mock-only"><span>E</span>Edit</button>
         <button data-action="mock-only"><span>D</span>Duplicate</button>
-        <button data-action="mock-only"><span>X</span>Deactivate</button>
+        ${retired ? "" : `<button data-action="mock-only"><span>X</span>Deactivate</button>`}
         <button data-action="open-mobile-sheet"><span>P</span>Print</button>
       </div>
     ` : ""}
@@ -1562,7 +1975,7 @@ function renderMobileAssetDetailBody(asset) {
         <div class="detail-img">I</div>
         <div><strong>${asset.code}</strong><p>${asset.description}</p></div>
       </div>
-      ${detailRow("Status", `<span class="status green">${asset.status}</span>`)}
+      ${detailRow("Status", `<span class="status ${isRetiredAsset(asset) ? "retired" : "green"}">${assetStatusLabel(asset)}</span>`)}
       ${detailRow("External Code", asset.external)}
       ${detailRow("Brand", asset.brand)}
       ${detailRow("Model", asset.model)}
@@ -1580,9 +1993,15 @@ function renderMobileAssetHistory() {
     <div class="detail-body mobile-history-body">
       <div class="mobile-history-filters">
         <div class="mobile-filter-line"><label>Period</label><select><option>All</option></select></div>
-        <div class="mobile-filter-line"><label>Type</label><select><option>All</option><option>Transfer Asset</option></select></div>
+        <div class="mobile-filter-line"><label>Type</label><select><option>All</option><option>Retirement Asset</option><option>Transfer Asset</option></select></div>
         <div class="mobile-filter-line"><label>User</label><select><option>All</option><option>Jennie</option></select></div>
       </div>
+      <button class="mobile-history-card" data-action="view-mobile-retirement">
+        <span class="history-title">Retirement Asset</span>
+        <em class="history-doc">${retirementNo}</em>
+        <span class="history-user">Jennie</span>
+        <span class="history-date">${retirementDefaults.createdAt}</span>
+      </button>
       <button class="mobile-history-card" data-action="view-mobile-transfer">
         <span class="history-title">Transfer Asset</span>
         <em class="history-doc">${transferNo}</em>
@@ -1604,7 +2023,9 @@ function detailRow(label, value) {
 
 function renderMobileSheet() {
   if (state.mobileSheet === "transfer-filter") return renderMobileTransferFilter();
+  if (state.mobileSheet === "retirement-filter") return renderMobileRetirementFilter();
   if (state.mobileSheet === "asset-picker") return renderMobileAssetPicker();
+  if (state.mobileSheet === "retirement-asset-picker") return renderMobileRetirementAssetPicker();
   return `
     <div class="bottom-sheet-backdrop">
       <div class="bottom-sheet">
@@ -1651,13 +2072,14 @@ function renderMobileSheet() {
 }
 
 function renderMobileAssetPicker() {
+  const activeAssets = assets.slice(0, 3).filter((asset) => !state.retiredAssets.has(asset.id));
   return `
     <div class="bottom-sheet-backdrop">
       <div class="bottom-sheet asset-picker-sheet">
         <div class="sheet-title"><h3>Select Asset</h3></div>
         <div class="mobile-search picker-search"><span>Q</span><input placeholder="Search Asset" /></div>
         <div class="mobile-picker-list">
-          ${assets.slice(0, 3).map(renderMobileSelectableAsset).join("")}
+          ${activeAssets.map(renderMobileSelectableAsset).join("")}
         </div>
         <div class="sheet-actions">
           <button class="btn ghost" data-action="close-mobile-sheet">Close</button>
@@ -1668,6 +2090,35 @@ function renderMobileAssetPicker() {
   `;
 }
 
+function renderMobileRetirementAssetPicker() {
+  const activeAssets = assets.slice(0, 3).filter((asset) => asset.status === "Active" && !state.retiredAssets.has(asset.id));
+  return `
+    <div class="bottom-sheet-backdrop">
+      <div class="bottom-sheet asset-picker-sheet">
+        <div class="sheet-title"><h3>Select Active Asset</h3></div>
+        <div class="mobile-search picker-search"><span>Q</span><input placeholder="Search Asset" /></div>
+        <div class="mobile-picker-list">
+          ${activeAssets.map(renderMobileRetirementSelectableAsset).join("")}
+        </div>
+        <div class="sheet-actions">
+          <button class="btn ghost" data-action="close-mobile-sheet">Close</button>
+          <button class="btn primary" data-action="close-mobile-sheet">Done</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMobileRetirementSelectableAsset(asset) {
+  const chosen = state.retirementSelected.has(asset.id);
+  return `
+    <button class="mobile-picker-item ${chosen ? "selected" : ""}" data-action="toggle-retirement-asset" data-id="${asset.id}">
+      <strong>${asset.code}</strong>
+      <span>${asset.description}</span>
+    </button>
+  `;
+}
+
 function renderMobileTransferFilter() {
   return `
     <div class="bottom-sheet-backdrop">
@@ -1675,11 +2126,37 @@ function renderMobileTransferFilter() {
         <div class="sheet-title"><h3>Filter Transfer</h3></div>
         <div class="mobile-field">
           <label>Period</label>
-          <select class="mobile-select"><option>May 2026</option><option>All</option></select>
+          <select class="mobile-select"><option>01-05-2026 - 31-05-2026</option><option>All</option></select>
         </div>
         <div class="mobile-field">
           <label>Type</label>
           <select class="mobile-select"><option>All Types</option><option>Location</option><option>Department</option></select>
+        </div>
+        <div class="mobile-field">
+          <label>User</label>
+          <select class="mobile-select"><option>Jennie</option><option>All Users</option></select>
+        </div>
+        <div class="sheet-actions">
+          <button class="btn ghost" data-action="close-mobile-sheet">Reset</button>
+          <button class="btn primary" data-action="close-mobile-sheet">Apply</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMobileRetirementFilter() {
+  return `
+    <div class="bottom-sheet-backdrop">
+      <div class="bottom-sheet">
+        <div class="sheet-title"><h3>Filter Retirement</h3></div>
+        <div class="mobile-field">
+          <label>Period</label>
+          <select class="mobile-select"><option>01-05-2026 - 31-05-2026</option><option>All</option></select>
+        </div>
+        <div class="mobile-field">
+          <label>Reason</label>
+          <select class="mobile-select"><option>All Reasons</option><option>Sold</option><option>Damaged</option><option>Obsolete</option><option>Donated</option><option>Scrapped</option></select>
         </div>
         <div class="mobile-field">
           <label>User</label>
@@ -1739,6 +2216,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "asset-view") {
+    if (target.dataset.id) state.selectedAssetId = Number(target.dataset.id);
     state.assetTab = "detail";
     setState({ webPage: "assetDetail" });
     return;
@@ -1789,14 +2267,39 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "new-retirement") {
+    state.retirementReason = "Scrapped";
+    state.retirementSelected = new Set([215]);
+    setState({ webPage: "retirementNew" });
+    return;
+  }
+
+  if (action === "view-retirement") {
+    const retirement = retirements.find((item) => item.no === target.dataset.retirement) || retirementDefaults;
+    state.retirementViewNo = retirement.no;
+    state.retirementViewIds = [...retirement.assetIds];
+    setState({ webPage: "retirementView" });
+    return;
+  }
+
   if (action === "open-asset-lookup") {
     state.modal = "assetLookup";
     render();
     return;
   }
 
+  if (action === "open-retirement-asset-lookup") {
+    state.modal = "retirementAssetLookup";
+    render();
+    return;
+  }
+
   if (action === "toggle-transfer-asset") {
     const id = Number(target.dataset.id);
+    if (state.retiredAssets.has(id)) {
+      showToast("Retired assets cannot be transferred.");
+      return;
+    }
     if (state.transferSelected.has(id)) state.transferSelected.delete(id);
     else state.transferSelected.add(id);
     if (state.modal === "assetLookup") state.modal = null;
@@ -1810,6 +2313,25 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "toggle-retirement-asset") {
+    const id = Number(target.dataset.id);
+    if (state.retiredAssets.has(id)) {
+      showToast("Retired assets cannot be selected.");
+      return;
+    }
+    if (state.retirementSelected.has(id)) state.retirementSelected.delete(id);
+    else state.retirementSelected.add(id);
+    if (state.modal === "retirementAssetLookup") state.modal = null;
+    render();
+    return;
+  }
+
+  if (action === "remove-retirement-asset") {
+    state.retirementSelected.delete(Number(target.dataset.id));
+    render();
+    return;
+  }
+
   if (action === "save-transfer") {
     if (!state.transferSelected.size) {
       window.alert("Please select at least one asset.");
@@ -1819,6 +2341,27 @@ document.addEventListener("click", (event) => {
     state.transferViewNo = transferNo;
     window.alert("Transfer saved successfully.");
     setState({ webPage: "transferView" });
+    return;
+  }
+
+  if (action === "save-retirement") {
+    if (!state.retirementSelected.size) {
+      window.alert("Please select at least one asset.");
+      return;
+    }
+    state.retirementViewIds = [...state.retirementSelected];
+    state.retirementViewNo = retirementNo;
+    state.savedRetirement = {
+      ...retirementDefaults,
+      reason: state.retirementReason,
+      assetIds: [...state.retirementSelected]
+    };
+    state.retirementSelected.forEach((id) => {
+      state.retiredAssets.add(id);
+      state.retirementReasonByAsset[id] = state.retirementReason;
+    });
+    window.alert("Retirement saved successfully.");
+    setState({ webPage: "retirementView" });
     return;
   }
 
@@ -1889,7 +2432,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "transaction-preview-back") {
-    setState({ webPage: "transferView" });
+    setState({ webPage: state.transactionPreviewType === "retirement" ? "retirementView" : "transferView" });
     return;
   }
 
@@ -1906,6 +2449,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "export-transfer-pdf") {
+    state.transactionPreviewType = "transfer";
     if (target.dataset.transfer) {
       const transfer = transfers.find((item) => item.no === target.dataset.transfer) || transferDefaults;
       state.transferViewNo = transfer.no;
@@ -1915,8 +2459,20 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "export-retirement-pdf") {
+    state.transactionPreviewType = "retirement";
+    if (target.dataset.retirement) {
+      const retirement = retirements.find((item) => item.no === target.dataset.retirement) || retirementDefaults;
+      state.retirementViewNo = retirement.no;
+      state.retirementViewIds = [...retirement.assetIds];
+    }
+    setState({ webPage: "transactionPreview" });
+    return;
+  }
+
   if (action === "mobile-page") {
     state.mobileSheet = false;
+    if (target.dataset.id) state.selectedAssetId = Number(target.dataset.id);
     if (target.dataset.page === "detail") state.assetTab = "detail";
     setState({ mobilePage: target.dataset.page });
     return;
@@ -1935,8 +2491,20 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "open-retirement-filter") {
+    state.mobileSheet = "retirement-filter";
+    render();
+    return;
+  }
+
   if (action === "open-mobile-asset-picker") {
     state.mobileSheet = "asset-picker";
+    render();
+    return;
+  }
+
+  if (action === "open-mobile-retirement-asset-picker") {
+    state.mobileSheet = "retirement-asset-picker";
     render();
     return;
   }
@@ -1965,6 +2533,14 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "export-mobile-transfer-pdf") {
+    state.transactionPreviewType = "transfer";
+    state.mobileSheet = false;
+    setState({ mobilePage: "transactionPreview" });
+    return;
+  }
+
+  if (action === "export-mobile-retirement-pdf") {
+    state.transactionPreviewType = "retirement";
     state.mobileSheet = false;
     setState({ mobilePage: "transactionPreview" });
     return;
@@ -1991,6 +2567,21 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "new-mobile-retirement") {
+    state.retirementReason = "Scrapped";
+    state.retirementSelected = new Set([215]);
+    setState({ mobilePage: "retirementNew" });
+    return;
+  }
+
+  if (action === "view-mobile-retirement") {
+    const retirement = retirements.find((item) => item.no === target.dataset.retirement) || retirementDefaults;
+    state.retirementViewNo = retirement.no;
+    state.retirementViewIds = [...retirement.assetIds];
+    setState({ mobilePage: "retirementView" });
+    return;
+  }
+
   if (action === "save-mobile-transfer") {
     if (!state.transferSelected.size) {
       window.alert("Please select at least one asset.");
@@ -2000,6 +2591,27 @@ document.addEventListener("click", (event) => {
     state.transferViewNo = transferNo;
     window.alert("Transfer saved successfully.");
     setState({ mobilePage: "transferView" });
+    return;
+  }
+
+  if (action === "save-mobile-retirement") {
+    if (!state.retirementSelected.size) {
+      window.alert("Please select at least one asset.");
+      return;
+    }
+    state.retirementViewIds = [...state.retirementSelected];
+    state.retirementViewNo = retirementNo;
+    state.savedRetirement = {
+      ...retirementDefaults,
+      reason: state.retirementReason,
+      assetIds: [...state.retirementSelected]
+    };
+    state.retirementSelected.forEach((id) => {
+      state.retiredAssets.add(id);
+      state.retirementReasonByAsset[id] = state.retirementReason;
+    });
+    window.alert("Retirement saved successfully.");
+    setState({ mobilePage: "retirementView" });
     return;
   }
 
@@ -2046,6 +2658,11 @@ document.addEventListener("change", (event) => {
 
   if (field === "transaction-logo") {
     state.transactionTemplate.showLogo = event.target.checked;
+    render();
+  }
+
+  if (field === "retirement-reason") {
+    state.retirementReason = event.target.value;
     render();
   }
 

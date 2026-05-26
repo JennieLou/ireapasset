@@ -557,6 +557,11 @@ button {
   color: #21763e;
 }
 
+.status.retired {
+  background: #6f7881;
+  color: #fff;
+}
+
 .photo-box.large {
   width: 120px;
   height: 118px;
@@ -643,6 +648,8 @@ button {
 .history-filters input,
 .transfer-filter input,
 .transfer-filter select,
+.retirement-filter input,
+.retirement-filter select,
 textarea.form-control {
   border: 1px solid #e2e6ec;
   background: #fff;
@@ -661,7 +668,12 @@ textarea.form-control {
 }
 
 .transfer-filter {
-  grid-template-columns: 92px minmax(150px, 200px) 60px minmax(150px, 190px) 70px minmax(150px, 190px) 80px minmax(180px, 240px) 84px;
+  grid-template-columns: 92px minmax(150px, 200px) 60px minmax(150px, 190px) 70px minmax(150px, 190px) 84px;
+  margin-left: 0;
+}
+
+.retirement-filter {
+  grid-template-columns: 92px minmax(150px, 190px) 78px minmax(140px, 180px) 70px minmax(140px, 180px) 84px;
   margin-left: 0;
 }
 
@@ -1815,6 +1827,10 @@ kbd {
   grid-template-columns: repeat(4, 1fr);
 }
 
+.bottom-actions.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .bottom-actions button {
   border: 0;
   background: #fff;
@@ -2333,6 +2349,10 @@ kbd {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   padding: 12px 14px;
+}
+
+.mobile-form-actions .btn:only-child {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 760px) {
