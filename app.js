@@ -117,11 +117,28 @@ const retirements = [
 const state = {
   mode: "landing",
   webPage: "asset",
+  webReportType: "rep-asset-register",
+  webColumnSettingsOpen: false,
+  webReportAdvancedOpen: false,
+  webReportHiddenColumns: {},
+  reportsOpen: false,
   mobilePage: "home",
-  assetOpen: true,
-  operationsOpen: true,
-  setupOpen: true,
+  assetOpen: false,
+  operationsOpen: false,
+  setupOpen: false,
   assetTab: "detail",
+  categoryPage: 0,
+  dashboardTab: "assets",
+  dashAssetBy: "category",
+  dashAssetMetric: "count",
+  reportFlow: "criteria",
+  reportIssueFilter: "all",
+  reportSource: "reports",
+  reportAdvancedOpen: false,
+  reportPreviewPage: 1,
+  reportTemplatePreviewPage: 1,
+  reportCriteria: {},
+  moreMenuOpen: false,
   template: {
     templateType: "asset-label",
     size: "medium",
@@ -133,6 +150,13 @@ const state = {
   transactionTemplate: {
     paperSize: "A4",
     showLogo: true,
+    preview: false
+  },
+  reportTemplate: {
+    paperSize: "A4",
+    showLogo: true,
+    showCriteria: true,
+    showSummary: true,
     preview: false
   },
   modal: null,
@@ -213,8 +237,24 @@ function qrContentLabel(qrContent) {
 function templateTypeLabel(templateType) {
   return {
     "asset-label": "Asset Label",
-    transaction: "Transaction"
+    transaction: "Transaction",
+    report: "Report"
   }[templateType];
+}
+
+function initCategoryScroll() {
+  const row = document.getElementById("cat-scroll");
+  const thumb = document.getElementById("cat-thumb");
+  if (!row || !thumb) return;
+  function syncThumb() {
+    const ratio = row.scrollLeft / (row.scrollWidth - row.clientWidth);
+    const trackW = thumb.parentElement.clientWidth;
+    const thumbW = Math.max(28, trackW * (row.clientWidth / row.scrollWidth));
+    thumb.style.width = thumbW + "px";
+    thumb.style.left = (ratio * (trackW - thumbW)) + "px";
+  }
+  syncThumb();
+  row.addEventListener("scroll", syncThumb, { passive: true });
 }
 
 function render() {
@@ -225,6 +265,7 @@ function render() {
   } else {
     app.innerHTML = renderLanding();
   }
+  if (state.mode === "mobile" && state.mobilePage === "home") initCategoryScroll();
 }
 
 function renderLanding() {
@@ -316,6 +357,14 @@ function webPageMeta() {
   if (state.webPage === "preview") {
     return { title: "Label Preview", breadcrumb: "Home <span>/</span> Asset <span>/</span> Label Preview" };
   }
+  if (state.webPage === "webReport") {
+    const meta = currentReportMetaFor(state.webReportType);
+    return { title: meta.name, breadcrumb: `Home <span>/</span> Reports <span>/</span> <strong>${meta.name}</strong>` };
+  }
+  if (state.webPage === "webReportPdf") {
+    const meta = currentReportMetaFor(state.webReportType);
+    return { title: `${meta.name} PDF Preview`, breadcrumb: `Home <span>/</span> Reports <span>/</span> ${meta.name} <span>/</span> <strong>PDF Preview</strong>` };
+  }
   return { title: "Asset", breadcrumb: "Home <span>/</span> Asset <span>/</span> <strong>Asset</strong>" };
 }
 
@@ -323,9 +372,11 @@ function renderSidebar() {
   const isAsset = state.webPage === "asset" || state.webPage === "assetDetail" || state.webPage === "mass" || state.webPage === "preview";
   const isOperations = state.webPage === "transfer" || state.webPage === "transferNew" || state.webPage === "transferView" || state.webPage === "retirement" || state.webPage === "retirementNew" || state.webPage === "retirementView" || state.webPage === "transactionPreview";
   const isTemplates = state.webPage === "templates";
-  const assetOpen = state.assetOpen || isAsset;
+  const isReports = state.webPage === "webReport" || state.webPage === "webReportPdf";
+  const assetOpen = state.assetOpen;
   const operationsOpen = state.operationsOpen;
-  const setupOpen = state.setupOpen || isTemplates;
+  const reportsOpen = state.reportsOpen;
+  const setupOpen = state.setupOpen;
   return `
     <aside class="web-sidebar">
       <div class="web-sidebar-top">
@@ -356,6 +407,16 @@ function renderSidebar() {
           ${operationsOpen ? `
             <button class="side-subitem ${state.webPage === "transfer" || state.webPage === "transferNew" || state.webPage === "transferView" ? "active" : ""}" data-action="web-page" data-page="transfer">Transfer Asset</button>
             <button class="side-subitem ${state.webPage === "retirement" || state.webPage === "retirementNew" || state.webPage === "retirementView" ? "active" : ""}" data-action="web-page" data-page="retirement">Retirement Asset</button>
+          ` : ""}
+        </div>
+        <div class="side-section">
+          <button class="side-item ${isReports ? "active" : ""}" data-action="toggle-reports"><span class="side-icon">R</span>Reports <span class="side-caret">${reportsOpen ? "v" : ">"}</span></button>
+          ${reportsOpen ? `
+            <button class="side-subitem ${state.webReportType === "rep-asset-register" && isReports ? "active" : ""}" data-action="web-report-nav" data-report="rep-asset-register">Asset Register</button>
+            <button class="side-subitem ${state.webReportType === "rep-data-quality" && isReports ? "active" : ""}" data-action="web-report-nav" data-report="rep-data-quality">Asset Data Quality</button>
+            <button class="side-subitem ${state.webReportType === "rep-agreement" && isReports ? "active" : ""}" data-action="web-report-nav" data-report="rep-agreement">Agreement Report</button>
+            <button class="side-subitem ${state.webReportType === "rep-asset-movement" && isReports ? "active" : ""}" data-action="web-report-nav" data-report="rep-asset-movement">Asset Movement</button>
+            <button class="side-subitem ${state.webReportType === "rep-asset-retirement" && isReports ? "active" : ""}" data-action="web-report-nav" data-report="rep-asset-retirement">Asset Retirement</button>
           ` : ""}
         </div>
         <div class="side-section">
@@ -390,6 +451,8 @@ function renderWebPage() {
   if (state.webPage === "templates") return renderPrintTemplates();
   if (state.webPage === "mass") return renderMassPrint();
   if (state.webPage === "preview") return renderWebPreview();
+  if (state.webPage === "webReport") return renderWebReportPage();
+  if (state.webPage === "webReportPdf") return renderWebReportPdfPreview();
   if (state.webPage === "home") return renderWebHome();
   return renderAssetList();
 }
@@ -406,6 +469,532 @@ function renderWebHome() {
         <div class="summary-card m-teal"><small>Active Agreements</small>0</div>
         <div class="summary-card m-orange"><small>Total Asset Value</small>IDR 0</div>
         <div class="summary-card m-red"><small>Expiring Soon</small>0</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWebReportPage() {
+  const meta = currentReportMetaFor(state.webReportType);
+  const criteria = ensureReportCriteria(state.webReportType);
+  return `
+    <div class="content-card web-report-page">
+      <div class="web-report-head">
+        <div>
+          <h2>${meta.name}</h2>
+          <p>Filter, analyze, review details, and export report results.</p>
+        </div>
+      </div>
+      <div class="web-report-criteria">
+        ${renderWebReportCriteria(state.webReportType, criteria)}
+        <div class="web-report-actions">
+          <button class="btn primary" data-action="web-report-search">Filter</button>
+          <button class="btn ghost" data-action="web-report-reset">Reset</button>
+        </div>
+      </div>
+      <div class="web-report-summary">
+        ${webReportSummaryItems(state.webReportType).map(([label, value], index) => `
+          <div class="web-report-kpi ${["m-blue", "m-teal", "m-orange", "m-red", "m-purple"][index % 5]}">
+            <small>${label}</small>
+            <strong>${value}</strong>
+          </div>
+        `).join("")}
+      </div>
+      <div class="toolbar web-report-toolbar">
+        <button class="btn" data-action="toggle-web-column-settings">Column Settings</button>
+        <button class="btn" data-action="mock-only">CSV</button>
+        <button class="btn" data-action="mock-only">Excel</button>
+        <button class="btn" data-action="web-report-pdf">PDF</button>
+        <span class="show">Show</span>
+        <select aria-label="Show Entries"><option>10</option><option>25</option><option>50</option></select>
+        <span>Entries</span>
+        <span class="spacer"></span>
+        <label>Search : <input aria-label="Search Report" /></label>
+      </div>
+      ${state.webColumnSettingsOpen ? renderWebColumnSettings(state.webReportType) : ""}
+      <div class="web-report-grid-wrap">
+        ${renderWebReportGrid(state.webReportType)}
+      </div>
+      <div class="table-footer">
+        <span>Showing 1 To ${webReportRowCount(state.webReportType)} Of ${webReportRowCount(state.webReportType)} Entries</span>
+        <div class="pagination"><button>Previous</button><button>1</button><button>Next</button></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWebColumnSettings(reportType) {
+  return `
+    <div class="web-column-settings">
+      ${webReportColumns(reportType).map((column) => `
+        <button class="web-column-option ${isWebColumnVisible(reportType, column.key) ? "selected" : ""}" data-action="web-column-toggle" data-key="${column.key}">
+          ${column.label}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function webReportColumns(reportType) {
+  const map = {
+    "rep-asset-register": [
+      { key: "no", label: "No." },
+      { key: "assetCode", label: "Asset Code" },
+      { key: "assetDesc", label: "Asset Desc" },
+      { key: "assetStatus", label: "Asset Status" },
+      { key: "externalCode", label: "External Code" },
+      { key: "brandModel", label: "Brand Model" },
+      { key: "serialNumber", label: "Serial Number" },
+      { key: "category", label: "Category" },
+      { key: "department", label: "Department" },
+      { key: "location", label: "Location" },
+      { key: "purchaseDate", label: "Purchase Date" },
+      { key: "amount", label: "Purchase Amount" },
+      { key: "attribute1", label: "Attribute 1" },
+      { key: "attribute2", label: "Attribute 2" },
+      { key: "attribute3", label: "Attribute 3" },
+      { key: "vendor", label: "Vendor" },
+      { key: "createdBy", label: "Created By" },
+      { key: "createdDate", label: "Created Date" }
+    ],
+    "rep-data-quality": [
+      { key: "no", label: "No." },
+      { key: "assetCode", label: "Asset Code" },
+      { key: "assetDesc", label: "Asset Desc" },
+      { key: "assetStatus", label: "Asset Status" },
+      { key: "externalCode", label: "External Code" },
+      { key: "brandModel", label: "Brand Model" },
+      { key: "serialNumber", label: "Serial Number" },
+      { key: "attribute1", label: "Attribute 1" },
+      { key: "attribute2", label: "Attribute 2" },
+      { key: "attribute3", label: "Attribute 3" },
+      { key: "category", label: "Category" },
+      { key: "department", label: "Department" },
+      { key: "location", label: "Location" },
+      { key: "issue", label: "Issue Type" },
+      { key: "createdBy", label: "Created By" },
+      { key: "createdDate", label: "Created Date" }
+    ],
+    "rep-agreement": [
+      { key: "no", label: "No." },
+      { key: "agreementTitle", label: "Agreement Title" },
+      { key: "agreementDesc", label: "Agreement Desc" },
+      { key: "agreementType", label: "Agreement Type" },
+      { key: "assetCount", label: "Asset Count" },
+      { key: "assetCode", label: "Asset Code" },
+      { key: "assetName", label: "Asset Name" },
+      { key: "assetStatus", label: "Asset Status" },
+      { key: "category", label: "Category" },
+      { key: "department", label: "Department" },
+      { key: "location", label: "Location" },
+      { key: "status", label: "Agreement Status" },
+      { key: "startDate", label: "Start Date" },
+      { key: "endDate", label: "End Date" },
+      { key: "value", label: "Value (IDR)" },
+      { key: "cost", label: "Cost" },
+      { key: "premium", label: "Premium" },
+      { key: "deductible", label: "Deductible" },
+      { key: "coverage", label: "Coverage" },
+      { key: "fee", label: "Fee" },
+      { key: "createdBy", label: "Created By" },
+      { key: "createdDate", label: "Created Date" }
+    ],
+    "rep-asset-movement": [
+      { key: "no", label: "No." },
+      { key: "transferNo", label: "Transfer No" },
+      { key: "transferDate", label: "Transfer Date" },
+      { key: "transferType", label: "Transfer Type" },
+      { key: "origin", label: "Origin" },
+      { key: "destination", label: "Destination" },
+      { key: "assetCount", label: "Asset Count" },
+      { key: "assetCode", label: "Asset Code" },
+      { key: "assetName", label: "Asset Name" },
+      { key: "assetStatus", label: "Asset Status" },
+      { key: "category", label: "Category" },
+      { key: "department", label: "Department" },
+      { key: "location", label: "Location" },
+      { key: "createdBy", label: "Created By" },
+      { key: "createdDate", label: "Created Date" }
+    ],
+    "rep-asset-retirement": [
+      { key: "no", label: "No." },
+      { key: "retirementNo", label: "Retirement No" },
+      { key: "retirementDate", label: "Retirement Date" },
+      { key: "reason", label: "Reason" },
+      { key: "assetCount", label: "Asset Count" },
+      { key: "assetCode", label: "Asset Code" },
+      { key: "assetName", label: "Asset Name" },
+      { key: "assetStatus", label: "Asset Status" },
+      { key: "category", label: "Category" },
+      { key: "department", label: "Department" },
+      { key: "location", label: "Location" },
+      { key: "createdBy", label: "Created By" },
+      { key: "createdDate", label: "Created Date" }
+    ]
+  };
+  return map[reportType] || [];
+}
+
+function isWebColumnVisible(reportType, key) {
+  const hidden = state.webReportHiddenColumns[reportType] || {};
+  if (hidden[key] !== undefined) return !hidden[key];
+  return !defaultHiddenWebColumns(reportType).includes(key);
+}
+
+function defaultHiddenWebColumns(reportType) {
+  const sharedAssetColumns = ["externalCode", "brandModel", "serialNumber", "attribute1", "attribute2", "attribute3"];
+  const auditColumns = ["createdBy", "createdDate"];
+  const agreementValueColumns = ["cost", "premium", "deductible", "coverage", "fee"];
+  const assetMetaColumns = ["assetStatus", "category", "department", "location"];
+  if (reportType === "rep-asset-register" || reportType === "rep-data-quality") return [...sharedAssetColumns, ...auditColumns];
+  if (reportType === "rep-agreement") {
+    const detailColumns = ensureReportCriteria(reportType).agreementDetailLevel !== "Include Asset List" ? ["assetCode", "assetName", ...assetMetaColumns] : assetMetaColumns;
+    return [...detailColumns, ...agreementValueColumns, ...auditColumns];
+  }
+  if (reportType === "rep-asset-movement" || reportType === "rep-asset-retirement") {
+    const detailColumns = ensureReportCriteria(reportType).detailLevel !== "Include Asset List" ? ["assetCode", "assetName", ...assetMetaColumns] : assetMetaColumns;
+    return [...detailColumns, ...auditColumns];
+  }
+  return auditColumns;
+}
+
+function renderWebReportCriteria(reportType, criteria) {
+  const fields = reportFields[reportType] || reportFields["rep-asset-register"];
+  return `
+    <section class="web-report-filter-section">
+      <h3>Basic Filters</h3>
+      <div class="web-report-filter-grid">
+        ${renderWebReportFieldList(reportType, fields.basic, criteria)}
+      </div>
+    </section>
+    <section class="web-report-filter-section">
+      <button class="web-advanced-toggle" data-action="toggle-web-report-advanced">
+        <span>Advanced Filters</span>
+        <em>${state.webReportAdvancedOpen ? "Hide" : "Show"}</em>
+      </button>
+      ${state.webReportAdvancedOpen ? `
+        <div class="web-report-filter-grid">
+          ${renderWebReportFieldList(reportType, fields.advanced, criteria)}
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function shouldShowWebReportField(reportType, field, criteria) {
+  if (reportType !== "rep-asset-movement") return true;
+  if (criteria.transferType === "Department Transfer" && (field === "originLocation" || field === "destinationLocation")) return false;
+  if (criteria.transferType === "Location Transfer" && (field === "originDepartment" || field === "destinationDepartment")) return false;
+  return true;
+}
+
+function renderWebReportField(field, value = "") {
+  const label = reportFieldLabels[field] || field;
+  if (field === "asset") return `<div class="web-report-field"><label>${label}</label><input data-field="web-report-${field}" value="${value}" placeholder="Search Asset Code or Asset Name" /></div>`;
+  if (field.endsWith("DateFrom") || field.endsWith("DateTo")) return `<div class="web-report-field"><label>${label}</label><input data-field="web-report-${field}" type="date" value="${value}" /></div>`;
+  if (reportOptions[field]) {
+    return `<div class="web-report-field"><label>${label}</label><select data-field="web-report-${field}">${reportOptions[field].map((item) => option(item, item, value)).join("")}</select></div>`;
+  }
+  return `<div class="web-report-field"><label>${label}</label><input data-field="web-report-${field}" value="${value}" /></div>`;
+}
+
+function renderWebReportFieldList(reportType, fields, criteria) {
+  const visibleFields = fields.filter((field) => shouldShowWebReportField(reportType, field, criteria));
+  const html = [];
+  for (let index = 0; index < visibleFields.length; index += 1) {
+    const field = visibleFields[index];
+    const next = visibleFields[index + 1];
+    if (field.endsWith("DateFrom") && next === field.replace("DateFrom", "DateTo")) {
+      html.push(renderWebReportDateRange(field, next, criteria));
+      index += 1;
+    } else {
+      html.push(renderWebReportField(field, criteria[field]));
+    }
+  }
+  return html.join("");
+}
+
+function renderWebReportDateRange(fromField, toField, criteria) {
+  const label = (reportFieldLabels[fromField] || fromField).replace(" From", "");
+  return `
+    <div class="web-report-field web-report-date-field">
+      <label>${label}</label>
+      <div class="web-date-range">
+        <input data-field="web-report-${fromField}" type="date" value="${criteria[fromField] || ""}" aria-label="${label} From" />
+        <input data-field="web-report-${toField}" type="date" value="${criteria[toField] || ""}" aria-label="${label} To" />
+      </div>
+    </div>
+  `;
+}
+
+function webReportSummaryItems(reportType) {
+  const map = {
+    "rep-asset-register": [["Total Assets", "142"], ["Active", "118"], ["Inactive", "16"], ["Retired", "8"], ["Total Amount", "IDR 2.4B"]],
+    "rep-asset-movement": [["Total Transfers", "14"], ["Department Transfers", "6"], ["Location Transfers", "8"], ["Total Assets Moved", "41"]],
+    "rep-asset-retirement": [["Total Retirements", "12"], ["Sold", "3"], ["Damaged", "4"], ["Obsolete", "2"], ["Donated", "1"], ["Scrapped", "2"]],
+    "rep-agreement": [["Total Agreements", "47"], ["Active", "38"], ["Expired", "4"], ["Expiring Soon", "5"], ["Warranty", "21"], ["Insurance", "15"], ["Contract / License", "11"]],
+    "rep-data-quality": [["Without Photo", "18"], ["Without Value", "31"]]
+  };
+  return map[reportType] || [];
+}
+
+function renderWebReportGrid(reportType) {
+  if (reportType === "rep-asset-register") return renderWebAssetRegisterGrid();
+  if (reportType === "rep-data-quality") return renderWebDataQualityGrid();
+  if (reportType === "rep-agreement") return renderWebAgreementGrid();
+  if (reportType === "rep-asset-movement") return renderWebMovementGrid();
+  if (reportType === "rep-asset-retirement") return renderWebRetirementGrid();
+  return "";
+}
+
+function renderWebAssetRegisterGrid() {
+  const amounts = ["18,500,000", "21,000,000", "1,250,000", "4,800,000", "3,200,000"];
+  const vendors = ["PT Vendor Alpha", "PT Digital Nusantara", "Office Supply Co.", "PT Printindo", "Furniture Central"];
+  const rows = assets.map((asset, index) => ({
+    no: index + 1,
+    assetCode: asset.code,
+    assetDesc: asset.description,
+    assetStatus: webAssetStatusBadge(asset),
+    externalCode: asset.external,
+    brandModel: webBrandModel(asset),
+    serialNumber: asset.serial,
+    category: asset.category,
+    department: asset.department,
+    location: asset.location,
+    purchaseDate: `0${index + 1}-06-2026`,
+    amount: pdfMoney(amounts[index] || "1,000,000"),
+    attribute1: "-",
+    attribute2: "-",
+    attribute3: "-",
+    vendor: vendors[index] || "-",
+    createdBy: ["Jennie", "Administrator", "Jennie", "Finance User", "GA User"][index] || "Jennie",
+    createdDate: `0${index + 1}-06-2026`
+  }));
+  return webDataTable(webReportColumns("rep-asset-register"), rows);
+}
+
+function renderWebDataQualityGrid() {
+  const rows = [
+    [assets[0], ["Without Photo"]],
+    [assets[1], ["Without Value"]],
+    [assets[2], ["Without Photo", "Without Value"]],
+    [assets[4], ["Without Value"]]
+  ].map(([asset, issues], index) => ({
+    no: index + 1,
+    assetCode: asset.code,
+    assetDesc: asset.description,
+    assetStatus: webAssetStatusBadge(asset),
+    externalCode: asset.external,
+    brandModel: webBrandModel(asset),
+    serialNumber: asset.serial,
+    attribute1: "-",
+    attribute2: "-",
+    attribute3: "-",
+    category: asset.category,
+    department: asset.department,
+    location: asset.location,
+    issue: pdfList(issues),
+    createdBy: ["Jennie", "Administrator", "Finance User", "GA User"][index] || "Jennie",
+    createdDate: `0${index + 1}-06-2026`
+  }));
+  return webDataTable(webReportColumns("rep-data-quality"), rows);
+}
+
+function renderWebAgreementGrid() {
+  const criteria = ensureReportCriteria("rep-agreement");
+  const rows = criteria.agreementDetailLevel === "Include Asset List"
+    ? agreementDetailRows().flatMap((item, parentIndex) => item.assetList.map((asset, assetIndex) => ({
+      no: `${parentIndex + 1}.${assetIndex + 1}`,
+      agreementTitle: item.title,
+      agreementDesc: item.desc,
+      agreementType: item.type,
+      assetCount: `${item.assetList.length} assets`,
+      assetCode: asset.code,
+      assetName: asset.description,
+      assetStatus: webAssetStatusBadge(asset),
+      category: asset.category,
+      department: asset.department,
+      location: asset.location,
+      status: webAgreementStatusBadge(item.statusText),
+      startDate: item.start,
+      endDate: item.end,
+      value: pdfList(item.valueItems),
+      cost: item.cost || "",
+      premium: item.premium || "",
+      deductible: item.deductible || "",
+      coverage: item.coverage || "",
+      fee: item.fee || "",
+      createdBy: item.createdBy,
+      createdDate: item.createdDate
+    })))
+    : agreementDetailRows().map((item) => ({
+      no: item.no,
+      agreementTitle: item.title,
+      agreementDesc: item.desc,
+      agreementType: item.type,
+      assetCount: `${item.assetList.length} assets`,
+      assetCode: "",
+      assetName: "",
+      assetStatus: "",
+      category: "",
+      department: "",
+      location: "",
+      status: webAgreementStatusBadge(item.statusText),
+      startDate: item.start,
+      endDate: item.end,
+      value: pdfList(item.valueItems),
+      cost: item.cost || "",
+      premium: item.premium || "",
+      deductible: item.deductible || "",
+      coverage: item.coverage || "",
+      fee: item.fee || "",
+      createdBy: item.createdBy,
+      createdDate: item.createdDate
+    }));
+  return webDataTable(webReportColumns("rep-agreement"), rows);
+}
+
+function renderWebMovementGrid() {
+  const criteria = ensureReportCriteria("rep-asset-movement");
+  const rows = criteria.detailLevel === "Include Asset List"
+    ? transfers.flatMap((transfer, parentIndex) => transfer.assetIds.map((id, assetIndex) => {
+      const asset = assets.find((item) => item.id === id);
+      return {
+        no: `${parentIndex + 1}.${assetIndex + 1}`,
+        transferNo: transfer.no,
+        transferDate: transfer.date,
+        transferType: transfer.type === "Department" ? "Department Transfer" : "Location Transfer",
+        origin: transfer.type === "Department" ? transfer.fromDepartment : transfer.fromLocation,
+        destination: transfer.type === "Department" ? transfer.toDepartment : transfer.toLocation,
+        assetCount: `${transfer.assetIds.length} assets`,
+        assetCode: asset?.code || "",
+        assetName: asset?.description || "",
+        assetStatus: asset ? webAssetStatusBadge(asset) : "",
+        category: asset?.category || "",
+        department: asset?.department || "",
+        location: asset?.location || "",
+        createdBy: transfer.user,
+        createdDate: transfer.createdAt
+      };
+    }))
+    : transfers.map((transfer, index) => ({
+      no: index + 1,
+      transferNo: transfer.no,
+      transferDate: transfer.date,
+      transferType: transfer.type === "Department" ? "Department Transfer" : "Location Transfer",
+      origin: transfer.type === "Department" ? transfer.fromDepartment : transfer.fromLocation,
+      destination: transfer.type === "Department" ? transfer.toDepartment : transfer.toLocation,
+      assetCount: `${transfer.assetIds.length} assets`,
+      assetCode: "",
+      assetName: "",
+      assetStatus: "",
+      category: "",
+      department: "",
+      location: "",
+      createdBy: transfer.user,
+      createdDate: transfer.createdAt
+    }));
+  return webDataTable(webReportColumns("rep-asset-movement"), rows);
+}
+
+function renderWebRetirementGrid() {
+  const criteria = ensureReportCriteria("rep-asset-retirement");
+  const rows = criteria.detailLevel === "Include Asset List"
+    ? retirements.flatMap((retirement, parentIndex) => retirement.assetIds.map((id, assetIndex) => {
+      const asset = assets.find((item) => item.id === id);
+      return {
+        no: `${parentIndex + 1}.${assetIndex + 1}`,
+        retirementNo: retirement.no,
+        retirementDate: retirement.date,
+        reason: retirement.reason,
+        assetCount: `${retirement.assetIds.length} assets`,
+        assetCode: asset?.code || "",
+        assetName: asset?.description || "",
+        assetStatus: asset ? webAssetStatusBadge(asset) : "",
+        category: asset?.category || "",
+        department: asset?.department || "",
+        location: asset?.location || "",
+        createdBy: retirement.user,
+        createdDate: retirement.createdAt
+      };
+    }))
+    : retirements.map((retirement, index) => ({
+      no: index + 1,
+      retirementNo: retirement.no,
+      retirementDate: retirement.date,
+      reason: retirement.reason,
+      assetCount: `${retirement.assetIds.length} assets`,
+      assetCode: "",
+      assetName: "",
+      assetStatus: "",
+      category: "",
+      department: "",
+      location: "",
+      createdBy: retirement.user,
+      createdDate: retirement.createdAt
+    }));
+  return webDataTable(webReportColumns("rep-asset-retirement"), rows);
+}
+
+function webAssetStatusBadge(asset) {
+  const retired = isRetiredAsset(asset);
+  return `<span class="status ${retired ? "retired" : "green"}">${assetStatusLabel(asset)}</span>`;
+}
+
+function webBrandModel(asset) {
+  return [asset.brand, asset.model].filter((item) => item && item !== "-").join(" / ") || "-";
+}
+
+function webAgreementStatusBadge(status) {
+  const className = status === "Expired" ? "retired" : status === "Active" ? "green" : "warning-status";
+  return `<span class="status ${className}">${status}</span>`;
+}
+
+function webDataTable(columns, rows) {
+  const visible = columns.filter((column) => isWebColumnVisible(state.webReportType, column.key));
+  return `
+    <table class="data-table web-report-table">
+      <thead><tr>${visible.map((column) => `<th class="sort">${column.label}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map((row) => `<tr>${visible.map((column) => `<td>${row[column.key] || ""}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  `;
+}
+
+function webReportRowCount(reportType) {
+  if (reportType === "rep-agreement" && ensureReportCriteria(reportType).agreementDetailLevel === "Include Asset List") {
+    return agreementDetailRows().reduce((total, row) => total + row.assetList.length, 0);
+  }
+  if (reportType === "rep-asset-movement" && ensureReportCriteria(reportType).detailLevel === "Include Asset List") {
+    return transfers.reduce((total, transfer) => total + transfer.assetIds.length, 0);
+  }
+  if (reportType === "rep-asset-retirement" && ensureReportCriteria(reportType).detailLevel === "Include Asset List") {
+    return retirements.reduce((total, retirement) => total + retirement.assetIds.length, 0);
+  }
+  return {
+    "rep-asset-register": assets.length,
+    "rep-data-quality": 4,
+    "rep-agreement": 4,
+    "rep-asset-movement": transfers.length,
+    "rep-asset-retirement": retirements.length
+  }[reportType] || 0;
+}
+
+function renderWebReportPdfPreview() {
+  const meta = currentReportMetaFor(state.webReportType);
+  state.reportType = state.webReportType;
+  const pages = getPdfReportPages(state.webReportType);
+  const currentPage = Math.min(state.reportPreviewPage, pages.length);
+  return `
+    <div class="content-card">
+      <div class="preview-top">
+        <button class="btn ghost" data-action="web-page" data-page="webReport">Back</button>
+        <button class="btn primary" data-action="mock-only">Download PDF</button>
+        <button class="btn primary" data-action="mock-only">Print</button>
+      </div>
+      <div class="web-report-pdf-canvas">
+        <h2>${meta.name}</h2>
+        ${renderPageNavigator("web-report-preview-page", currentPage, pages.length)}
+        ${pages[currentPage - 1]}
       </div>
     </div>
   `;
@@ -1162,8 +1751,82 @@ function renderTransactionDocument(transfer) {
   `;
 }
 
+function renderReportTemplateDocument() {
+  const pages = getReportTemplatePreviewPages();
+  const currentPage = Math.min(state.reportTemplatePreviewPage, pages.length);
+  return `
+    <div class="report-template-preview-wrap">
+      ${renderPageNavigator("report-template-preview-page", currentPage, pages.length)}
+      ${pages[currentPage - 1]}
+    </div>
+  `;
+}
+
+function getReportTemplatePreviewPages() {
+  const header = renderReportTemplateHeader();
+  const summary = state.reportTemplate.showSummary ? `<section class="pdf-section"><h2>Summary</h2>${pdfSummaryTable([["Summary Field 1", "Value"], ["Summary Field 2", "Value"], ["Summary Field 3", "Value"]])}</section>` : "";
+  const detail = `
+    <section class="pdf-section pdf-detail-section">
+      <h2>Table Content</h2>
+      <table class="pdf-table">
+        <thead><tr><th>No</th><th>Field 1</th><th>Field 2</th><th>Field 3</th></tr></thead>
+        <tbody>
+          ${[1, 2, 3, 4, 5, 6, 7, 8].map((no) => `<tr><td>${no}</td><td>Field 1</td><td>Field 2</td><td>Field 3</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+  if (state.reportTemplate.showCriteria) {
+    return [`
+      <article class="transaction-doc report-template-doc paper-${state.reportTemplate.paperSize.toLowerCase()}">
+          ${header}
+          <section class="pdf-section">
+            <h2>Criteria Selection</h2>
+            <div class="pdf-criteria-grid">
+              ${pdfInfo("Filter Field 1", "Value")}
+              ${pdfInfo("Filter Field 2", "Value")}
+              ${pdfInfo("Filter Field 3", "Value")}
+              ${pdfInfo("Filter Field 4", "Value")}
+              ${pdfInfo("Filter Field 5", "All")}
+              ${pdfInfo("Filter Field 6", "Value")}
+              ${pdfInfo("Date Range 1", "01-Jun-2026 - 30-Jun-2026")}
+              ${pdfInfo("Date Range 2", "All")}
+              ${pdfInfo("Created By", "All")}
+              ${pdfInfo("Detail Level", "Document Only")}
+            </div>
+          </section>
+          ${summary}
+          ${renderPdfFooter()}
+        </article>
+    `, `
+        <article class="transaction-doc report-template-doc paper-${state.reportTemplate.paperSize.toLowerCase()}">
+          ${detail}
+          ${renderPdfFooter()}
+        </article>
+    `];
+  }
+  return [`
+    <article class="transaction-doc report-template-doc paper-${state.reportTemplate.paperSize.toLowerCase()}">
+      ${header}
+      ${summary}
+      ${detail}
+      ${renderPdfFooter()}
+    </article>
+  `];
+}
+
+function renderReportTemplateHeader() {
+  return `
+    <section class="pdf-section pdf-report-header">
+      ${state.reportTemplate.showLogo ? `<div class="transaction-logo">LOGO</div>` : ""}
+      <h1>REPORT TITLE</h1>
+    </section>
+  `;
+}
+
 function renderPrintTemplates() {
   const isTransaction = state.template.templateType === "transaction";
+  const isReport = state.template.templateType === "report";
   return `
     <div class="content-card">
       <div class="settings-actions">
@@ -1176,6 +1839,7 @@ function renderPrintTemplates() {
           <select class="form-control" data-field="template-type">
             ${option("asset-label", "Asset Label", state.template.templateType)}
             ${option("transaction", "Transaction", state.template.templateType)}
+            ${option("report", "Report", state.template.templateType)}
           </select>
         </div>
         ${isTransaction ? `
@@ -1199,6 +1863,41 @@ function renderPrintTemplates() {
             </div>
           </div>
           ${state.transactionTemplate.preview ? `<div class="inline-preview transaction-settings-preview">${renderTransactionDocument(null)}</div>` : ""}
+        ` : isReport ? `
+          <div class="template-settings-box transaction-template-box">
+            <h2 class="content-title">Report Template</h2>
+            <div class="settings-field">
+              <label>Default Paper Size</label>
+              <select class="form-control" data-field="report-template-paper">
+                ${option("A4", "A4", state.reportTemplate.paperSize)}
+                ${option("Letter", "Letter", state.reportTemplate.paperSize)}
+                ${option("Legal", "Legal", state.reportTemplate.paperSize)}
+                ${option("F4", "F4 / Folio", state.reportTemplate.paperSize)}
+              </select>
+            </div>
+            <div class="settings-field">
+              <label>Show Company Logo</label>
+              <label class="plain-check">
+                <input type="checkbox" data-field="report-template-logo" ${state.reportTemplate.showLogo ? "checked" : ""} />
+                Show company logo
+              </label>
+            </div>
+            <div class="settings-field">
+              <label>Show Criteria Section</label>
+              <label class="plain-check">
+                <input type="checkbox" data-field="report-template-criteria" ${state.reportTemplate.showCriteria ? "checked" : ""} />
+                Show criteria section
+              </label>
+            </div>
+            <div class="settings-field">
+              <label>Show Summary Section</label>
+              <label class="plain-check">
+                <input type="checkbox" data-field="report-template-summary" ${state.reportTemplate.showSummary ? "checked" : ""} />
+                Show summary section
+              </label>
+            </div>
+          </div>
+          ${state.reportTemplate.preview ? `<div class="inline-preview transaction-settings-preview">${renderReportTemplateDocument()}</div>` : ""}
         ` : `
         <div class="template-settings-box">
           <h2 class="content-title">${templateTypeLabel(state.template.templateType)} Template</h2>
@@ -1435,17 +2134,47 @@ function renderMobileScreen() {
   if (state.mobilePage === "setup") return renderMobileSetup();
   if (state.mobilePage === "mobileTemplates") return renderMobileTemplates();
   if (state.mobilePage === "preview") return renderMobilePreview();
+  if (state.mobilePage === "dashboard") return renderMobileDashboard();
+  if (state.mobilePage === "reports") return renderMobileReports();
+  if (state.mobilePage === "reportCriteria") return renderReportCriteria();
+  if (state.mobilePage === "reportSummary") return renderReportSummary();
+  if (state.mobilePage === "reportPreview") return renderReportPreview();
+  if (state.mobilePage === "reportPlaceholder") return renderMobileReportPlaceholder();
   return renderMobileHome();
 }
 
 function renderMobileHome() {
+  const menuItems = [
+    { label: "Assets", icon: "A", bg: "linear-gradient(135deg,#71d1ff,#806bff)", action: "mobile-page", page: "assets" },
+    { label: "Agreements", icon: "G", bg: "linear-gradient(135deg,#ffd454,#ff5f6d)", action: "mock-only" },
+    { label: "Operations", icon: "O", bg: "linear-gradient(135deg,#32a7ee,#4837e3)", action: "mobile-page", page: "operations" },
+    { label: "Reports", icon: "R", bg: "linear-gradient(135deg,#ff7c5c,#e8003d)", action: "mobile-page", page: "reports" },
+    { label: "Setup", icon: "S", bg: "linear-gradient(135deg,#28d5cd,#10c46a)", action: "mobile-page", page: "setup" }
+  ];
   return `
-    <div class="mobile-header">
+    <div class="mobile-header" style="overflow:visible;position:relative;">
       <div class="mobile-home-top">
         <div class="mobile-title">iReap Asset</div>
-        <div class="mobile-icons"><span>?</span><span>S</span><span>M</span><button class="mobile-logout" data-action="landing">L</button></div>
+        <div class="mobile-icons">
+          <button class="mobile-icon-btn" data-action="mock-only" title="Notifications">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+          <button class="mobile-icon-btn" data-action="toggle-more-menu" title="More">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </button>
+        </div>
       </div>
+      ${state.moreMenuOpen ? `
+        <div class="more-menu">
+          <button class="more-menu-item" data-action="mock-only">About</button>
+          <button class="more-menu-item" data-action="mock-only">How To</button>
+          <button class="more-menu-item" data-action="open-support-sheet">Support</button>
+          <button class="more-menu-item" data-action="mock-only">Share App</button>
+          <button class="more-menu-item logout" data-action="landing">Logout</button>
+        </div>
+      ` : ""}
     </div>
+    <div class="home-scroll">
     <div class="mobile-user-card">
       <div class="avatar">J</div>
       <strong>jennie</strong>
@@ -1456,23 +2185,1103 @@ function renderMobileHome() {
       <button class="mobile-outline-btn" data-action="mock-only">View Plans</button>
     </div>
     <section class="mobile-section">
-      <h2>Categories</h2>
-      <div class="category-grid">
-        ${mobileCategory("Assets", "A", "linear-gradient(135deg,#71d1ff,#806bff)", "mobile-page", "assets")}
-        ${mobileCategory("Agreements", "G", "linear-gradient(135deg,#ffd454,#ff5f6d)", "mock-only")}
-        ${mobileCategory("Operations", "O", "linear-gradient(135deg,#32a7ee,#4837e3)", "mobile-page", "operations")}
-        ${mobileCategory("Setup", "S", "linear-gradient(135deg,#28d5cd,#10c46a)", "mobile-page", "setup")}
+      <h2>Menu</h2>
+      <div class="category-scroll-wrap">
+        <div class="category-scroll-row" id="cat-scroll">
+          ${menuItems.map(item => mobileCategory(item.label, item.icon, item.bg, item.action, item.page)).join("")}
+        </div>
+        <div class="cat-scrollbar-track"><div class="cat-scrollbar-thumb" id="cat-thumb"></div></div>
       </div>
     </section>
     <section class="mobile-section">
       <h2>Summary</h2>
       <div class="summary-grid">
-        <div class="summary-card m-blue"><small>Active Assets</small>0</div>
-        <div class="summary-card m-teal"><small>Active Agreements</small>0</div>
-        <div class="summary-card m-orange"><small>Total Asset Value</small>IDR 0</div>
-        <div class="summary-card m-red"><small>Expiring Soon</small>0</div>
+        <button class="summary-card m-blue clickable-card" data-action="mock-only"><small>Active Assets</small>142</button>
+        <button class="summary-card m-teal clickable-card" data-action="mock-only"><small>Active Agreements</small>37</button>
+        <button class="summary-card m-orange clickable-card" data-action="mock-only"><small>Total Asset Value</small>IDR 2.4B</button>
+        <button class="summary-card m-red clickable-card" data-action="mock-only"><small>Expiring Soon</small>5</button>
       </div>
+      <button class="view-dashboard-btn" data-action="mobile-page" data-page="dashboard">View Full Dashboard →</button>
     </section>
+    </div>
+  `;
+}
+
+function renderMobileDashboard() {
+  const tabs = ["assets", "agreements", "operations"];
+  const tabLabels = { assets: "Assets", agreements: "Agreements", operations: "Operations" };
+  const t = state.dashboardTab;
+  return `
+    ${mobileHeader("Dashboard Analytics", "home")}
+    <div class="dash-tabs">
+      ${tabs.map(tab => `<button class="dash-tab ${t === tab ? "active" : ""}" data-action="dashboard-tab" data-tab="${tab}">${tabLabels[tab]}</button>`).join("")}
+    </div>
+    <div class="dash-content">
+      ${t === "assets" ? renderDashAssets() : ""}
+      ${t === "agreements" ? renderDashAgreements() : ""}
+      ${t === "operations" ? renderDashOperations() : ""}
+    </div>
+  `;
+}
+
+function segmentControl(field, options, current) {
+  return `<div class="dash-segment">${options.map(o => `<button class="dash-seg-btn ${current === o.val ? "active" : ""}" data-action="dash-asset-seg" data-field="${field}" data-val="${o.val}">${o.label}</button>`).join("")}</div>`;
+}
+
+const CHART_COLORS = ["#4f94e8","#f5a623","#7ed321","#d0021b","#9b59b6","#1abc9c","#e67e22"];
+
+function donutChart(slices, centerLine1, centerLine2) {
+  const total = slices.reduce((s, r) => s + r.raw, 0);
+  const cx = 80, cy = 80, r = 62, ri = 38;
+  let angle = -Math.PI / 2;
+  const paths = slices.map((s, i) => {
+    const sweep = (s.raw / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+    angle += sweep;
+    const x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
+    const ix1 = cx + ri * Math.cos(angle - sweep), iy1 = cy + ri * Math.sin(angle - sweep);
+    const ix2 = cx + ri * Math.cos(angle), iy2 = cy + ri * Math.sin(angle);
+    const large = sweep > Math.PI ? 1 : 0;
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+    return `<path d="M${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} L${ix2.toFixed(2)},${iy2.toFixed(2)} A${ri},${ri} 0 ${large},0 ${ix1.toFixed(2)},${iy1.toFixed(2)} Z" fill="${color}" stroke="#fff" stroke-width="2"/>`;
+  }).join("");
+  const center = centerLine1 ? `
+    <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="18" font-weight="700" fill="#1a2030">${centerLine1}</text>
+    <text x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="11" fill="#8a929e">${centerLine2 || ""}</text>` : "";
+  const legend = slices.map((s, i) => {
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+    const attrs = dashboardAttrs(s);
+    const tag = attrs ? "button" : "div";
+    return `<${tag} class="donut-legend-item ${attrs ? "clickable-drill" : ""}" ${attrs}><span class="donut-legend-dot" style="background:${color}"></span><span class="donut-legend-label">${s.label}</span><span class="donut-legend-val">${s.val}</span></${tag}>`;
+  }).join("");
+  return `
+    <div class="donut-wrap">
+      <svg viewBox="0 0 160 160" width="140" height="140"><g>${paths}</g>${center}</svg>
+      <div class="donut-legend">${legend}</div>
+    </div>`;
+}
+
+function columnChart(bars) {
+  const maxVal = Math.max(...bars.map(b => b.raw));
+  const w = 280, h = 90, pad = 6;
+  const bw = Math.floor((w - pad * (bars.length + 1)) / bars.length);
+  const rects = bars.map((b, i) => {
+    const bh = Math.round((b.raw / maxVal) * (h - 20));
+    const x = pad + i * (bw + pad);
+    const y = h - bh - 18;
+    const color = b.color || CHART_COLORS[i % CHART_COLORS.length];
+    const attrs = dashboardAttrs(b);
+    const content = `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="3" fill="${color}"/>
+            <text x="${x + bw / 2}" y="${h - 2}" text-anchor="middle" font-size="9" fill="#8a929e">${b.label}</text>
+            <text x="${x + bw / 2}" y="${y - 3}" text-anchor="middle" font-size="9" fill="${color}" font-weight="700">${b.val}</text>`;
+    return attrs ? `<g class="svg-drill" ${attrs}>${content}</g>` : content;
+  }).join("");
+  return `<div class="column-chart-wrap"><svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${rects}</svg></div>`;
+}
+
+function trendColumnChart(series, color) {
+  const maxVal = Math.max(...series.map(p => p.val));
+  const w = 280, h = 100, padH = 22, padV = 18;
+  const bw = Math.floor((w - padH * (series.length + 1)) / series.length);
+  const rects = series.map((p, i) => {
+    const bh = Math.max(4, Math.round((p.val / maxVal) * (h - padV - 14)));
+    const x = padH + i * (bw + padH);
+    const y = h - padV - bh;
+    const attrs = dashboardAttrs(p);
+    const content = `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="3" fill="${color}"/>
+            <text x="${x + bw / 2}" y="${h - 4}" text-anchor="middle" font-size="9" fill="#8a929e">${p.label}</text>
+            <text x="${x + bw / 2}" y="${y - 3}" text-anchor="middle" font-size="9" fill="${color}" font-weight="700">${p.val}</text>`;
+    return attrs ? `<g class="svg-drill" ${attrs}>${content}</g>` : content;
+  }).join("");
+  return `<div class="line-chart-wrap"><svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${rects}</svg></div>`;
+}
+
+function dashboardAttrs(item) {
+  if (!item.report) return "";
+  const attrs = [
+    `data-action="dashboard-report"`,
+    `data-report="${item.report}"`
+  ];
+  if (item.field) attrs.push(`data-field="${item.field}"`);
+  if (item.value) attrs.push(`data-value="${item.value}"`);
+  if (item.issue) attrs.push(`data-issue="${item.issue}"`);
+  if (item.status) attrs.push(`data-status="${item.status}"`);
+  if (item.type) attrs.push(`data-type="${item.type}"`);
+  if (item.expiring) attrs.push(`data-expiring="${item.expiring}"`);
+  if (item.month) attrs.push(`data-month="${item.month}"`);
+  return attrs.join(" ");
+}
+
+function renderDashAssets() {
+  const by = state.dashAssetBy;
+  const metric = state.dashAssetMetric;
+
+  const data = {
+    category: {
+      count: [
+        { label: "Electronics", raw: 58, val: "58" },
+        { label: "Furniture",   raw: 41, val: "41" },
+        { label: "Vehicles",    raw: 23, val: "23" },
+        { label: "Other",       raw: 20, val: "20" }
+      ],
+      value: [
+        { label: "Electronics", raw: 1100, val: "IDR 1.1B" },
+        { label: "Vehicles",    raw: 890,  val: "IDR 890M" },
+        { label: "Furniture",   raw: 220,  val: "IDR 220M" },
+        { label: "Other",       raw: 90,   val: "IDR 90M"  }
+      ]
+    },
+    department: {
+      count: [
+        { label: "IT",      raw: 45, val: "45" },
+        { label: "Admin",   raw: 38, val: "38" },
+        { label: "GA",      raw: 30, val: "30" },
+        { label: "Finance", raw: 29, val: "29" }
+      ],
+      value: [
+        { label: "IT",      raw: 980, val: "IDR 980M" },
+        { label: "GA",      raw: 640, val: "IDR 640M" },
+        { label: "Finance", raw: 440, val: "IDR 440M" },
+        { label: "Admin",   raw: 240, val: "IDR 240M" }
+      ]
+    },
+    location: {
+      count: [
+        { label: "Head Office", raw: 82, val: "82" },
+        { label: "Warehouse",   raw: 37, val: "37" },
+        { label: "Branch",      raw: 23, val: "23" }
+      ],
+      value: [
+        { label: "Head Office", raw: 1600, val: "IDR 1.6B" },
+        { label: "Branch",      raw: 520,  val: "IDR 520M" },
+        { label: "Warehouse",   raw: 180,  val: "IDR 180M" }
+      ]
+    }
+  };
+
+  const slices = data[by][metric].map((slice) => ({
+    ...slice,
+    report: "rep-asset-register",
+    field: by,
+    value: slice.label
+  }));
+
+  return `
+    <div class="dash-chart-card">
+      <div class="dash-chart-label">Asset Distribution</div>
+      <div class="dash-seg-row">
+        <span class="dash-seg-label">By</span>
+        ${segmentControl("dashAssetBy", [
+          { val: "category",   label: "Category"   },
+          { val: "department", label: "Department"  },
+          { val: "location",   label: "Location"    }
+        ], by)}
+      </div>
+      <div class="dash-seg-row">
+        <span class="dash-seg-label">Metric</span>
+        ${segmentControl("dashAssetMetric", [
+          { val: "count", label: "Count" },
+          { val: "value", label: "Value" }
+        ], metric)}
+      </div>
+      ${donutChart(slices, metric === "count" ? "142" : "IDR 2.4B", metric === "count" ? "Assets" : "")}
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-label">Asset Data Quality</div>
+      <button class="dq-item" data-action="dashboard-report" data-report="rep-data-quality" data-issue="without-photo">
+        <span>Without Photo</span><span class="dq-badge">18</span>
+      </button>
+      <button class="dq-item" data-action="dashboard-report" data-report="rep-data-quality" data-issue="without-value">
+        <span>Without Value</span><span class="dq-badge">31</span>
+      </button>
+    </div>
+  `;
+}
+
+function renderDashAgreements() {
+  const typeSlices = [
+    { label: "Warranty",           raw: 21, val: "21", report: "rep-agreement", type: "Warranty" },
+    { label: "Insurance",          raw: 15, val: "15", report: "rep-agreement", type: "Insurance" },
+    { label: "Contract / License", raw: 11, val: "11", report: "rep-agreement", type: "Contract / License" }
+  ];
+  const expiryBars = [
+    { label: "0–30d",  raw: 5, val: "5", color: "#dc2626" },
+    { label: "31–60d", raw: 3, val: "3", color: "#f59e0b" },
+    { label: "61–90d", raw: 2, val: "2", color: "#eab308" },
+    { label: "90+d",   raw: 4, val: "4", color: "#16a34a" }
+  ];
+  const expiryDrillBars = expiryBars.map((bar, index) => ({
+    ...bar,
+    report: "rep-agreement",
+    expiring: ["Next 30 Days", "31-60 Days", "61-90 Days", "After 90 Days"][index]
+  }));
+  return `
+    <div class="dash-kpi-grid">
+      <button class="dash-kpi clickable-card" style="background:#f59e0b;" data-action="dashboard-report" data-report="rep-agreement" data-status="Expiring Soon">
+        <small>Expiring Soon</small><strong>5</strong>
+      </button>
+      <button class="dash-kpi clickable-card" style="background:#dc2626;" data-action="dashboard-report" data-report="rep-agreement" data-status="Expired">
+        <small>Expired</small><strong>4</strong>
+      </button>
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-label">Agreements by Type</div>
+      ${donutChart(typeSlices, "47", "Agreements")}
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-label">Upcoming Expirations</div>
+      ${columnChart(expiryDrillBars)}
+    </div>
+  `;
+}
+
+function renderDashOperations() {
+  const transferSeries = [
+    { label: "Jan", val: 8, report: "rep-asset-movement", month: "2026-01"  },
+    { label: "Feb", val: 12, report: "rep-asset-movement", month: "2026-02" },
+    { label: "Mar", val: 7, report: "rep-asset-movement", month: "2026-03"  },
+    { label: "Apr", val: 15, report: "rep-asset-movement", month: "2026-04" },
+    { label: "May", val: 11, report: "rep-asset-movement", month: "2026-05" },
+    { label: "Jun", val: 14, report: "rep-asset-movement", month: "2026-06" }
+  ];
+  const retirementSeries = [
+    { label: "Jan", val: 1, report: "rep-asset-retirement", month: "2026-01" },
+    { label: "Feb", val: 2, report: "rep-asset-retirement", month: "2026-02" },
+    { label: "Mar", val: 1, report: "rep-asset-retirement", month: "2026-03" },
+    { label: "Apr", val: 4, report: "rep-asset-retirement", month: "2026-04" },
+    { label: "May", val: 2, report: "rep-asset-retirement", month: "2026-05" },
+    { label: "Jun", val: 3, report: "rep-asset-retirement", month: "2026-06" }
+  ];
+  return `
+    <div class="dash-kpi-grid">
+      <button class="dash-kpi clickable-card" style="background:#5b8cf5;" data-action="dashboard-report" data-report="rep-asset-movement" data-month="2026-06"><small>Transfers This Month</small><strong>14</strong></button>
+      <button class="dash-kpi clickable-card" style="background:#e8736b;" data-action="dashboard-report" data-report="rep-asset-retirement" data-month="2026-06"><small>Retirements This Month</small><strong>3</strong></button>
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-label">Transfer Trend (Last 6 Months)</div>
+      ${trendColumnChart(transferSeries, "#5b8cf5")}
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-label">Retirement Trend (Last 6 Months)</div>
+      ${trendColumnChart(retirementSeries, "#e8736b")}
+    </div>
+  `;
+}
+
+function renderMobileReports() {
+  return `
+    ${mobileHeader("Reports", "home", `<button class="mobile-header-help" data-action="report-info" title="Report info">?</button>`)}
+    <div class="screen-content reports-screen">
+      <div class="reports-group-label">Assets</div>
+      ${reportItem("Asset Register", "Master asset listing", "rep-asset-register", "A", "report-blue")}
+      ${reportItem("Asset Data Quality Report", "Assets missing required information", "rep-data-quality", "Q", "report-purple")}
+      <div class="reports-group-label">Agreements</div>
+      ${reportItem("Agreement Report", "Warranty, insurance, and license expiry", "rep-agreement", "G", "report-orange")}
+      <div class="reports-group-label">Operations</div>
+      ${reportItem("Asset Movement", "Transfers by department or location", "rep-asset-movement", "M", "report-cyan")}
+      ${reportItem("Asset Retirement", "Retired assets by reason and date", "rep-asset-retirement", "R", "report-red")}
+    </div>
+  `;
+}
+
+const reportMeta = {
+  "rep-asset-register":   { name: "Asset Register",    back: "reports" },
+  "rep-asset-movement":   { name: "Asset Movement",    back: "reports" },
+  "rep-asset-retirement": { name: "Asset Retirement",  back: "reports" },
+  "rep-agreement":        { name: "Agreement Report",  back: "reports" },
+  "rep-data-quality":     { name: "Asset Data Quality Report", back: "reports" },
+  "rep-transfer":         { name: "Transfer Report",   back: "dashboard" },
+  "rep-retirement":       { name: "Retirement Report", back: "dashboard" }
+};
+
+function currentReportMeta() {
+  return reportMeta[state.reportType] || { name: "Report", back: "reports" };
+}
+
+function currentReportMetaFor(reportType) {
+  return reportMeta[reportType] || { name: "Report", back: "reports" };
+}
+
+const reportDefaults = {
+  "rep-asset-register": {
+    asset: "",
+    assetStatus: "Active",
+    category: "All",
+    department: "All",
+    location: "All",
+    acquisitionDateFrom: "",
+    acquisitionDateTo: "",
+    createdBy: "",
+    createdDateFrom: "",
+    createdDateTo: ""
+  },
+  "rep-asset-movement": {
+    asset: "",
+    transferType: "All",
+    originDepartment: "All",
+    destinationDepartment: "All",
+    originLocation: "All",
+    destinationLocation: "All",
+    transferDateFrom: "2026-06-01",
+    transferDateTo: "2026-06-30",
+    detailLevel: "Document Only",
+    createdBy: "",
+    createdDateFrom: "",
+    createdDateTo: ""
+  },
+  "rep-asset-retirement": {
+    asset: "",
+    retirementReason: "All",
+    category: "All",
+    department: "All",
+    location: "All",
+    retirementDateFrom: "2026-06-01",
+    retirementDateTo: "2026-06-30",
+    detailLevel: "Document Only",
+    createdBy: "",
+    createdDateFrom: "",
+    createdDateTo: ""
+  },
+  "rep-agreement": {
+    agreementType: "All",
+    agreementStatus: "Active",
+    agreementDetailLevel: "Agreement Only",
+    asset: "",
+    category: "All",
+    department: "All",
+    location: "All",
+    expiringWithin: "No Filter",
+    startDateFrom: "",
+    startDateTo: "",
+    expiryDateFrom: "",
+    expiryDateTo: "",
+    createdBy: "",
+    createdDateFrom: "",
+    createdDateTo: ""
+  },
+  "rep-data-quality": {
+    issueType: "All",
+    asset: "",
+    assetStatus: "Active",
+    category: "All",
+    department: "All",
+    location: "All",
+    createdBy: "",
+    createdDateFrom: "",
+    createdDateTo: ""
+  }
+};
+
+const reportOptions = {
+  assetStatus: ["All", "Active", "Inactive", "Retired"],
+  category: ["All", "Electronics", "Furniture", "Vehicles", "Other"],
+  department: ["All", "IT", "Admin", "Finance", "GA"],
+  location: ["All", "Head Office", "Warehouse", "Branch"],
+  originDepartment: ["All", "IT", "Admin", "Finance", "GA"],
+  destinationDepartment: ["All", "IT", "Admin", "Finance", "GA"],
+  originLocation: ["All", "Head Office", "Warehouse", "Branch"],
+  destinationLocation: ["All", "Head Office", "Warehouse", "Branch"],
+  createdBy: ["All", "Jennie", "Administrator", "Finance User", "GA User"],
+  transferType: ["All", "Department Transfer", "Location Transfer"],
+  detailLevel: ["Document Only", "Include Asset List"],
+  agreementDetailLevel: ["Agreement Only", "Include Asset List"],
+  retirementReason: ["All", "Sold", "Damaged", "Obsolete", "Donated", "Scrapped"],
+  agreementType: ["All", "Warranty", "Insurance", "Contract / License"],
+  agreementStatus: ["All", "Active", "Expired", "Expiring Soon"],
+  expiringWithin: ["No Filter", "Next 30 Days", "31-60 Days", "61-90 Days", "After 90 Days", "Next 60 Days", "Next 90 Days"],
+  issueType: ["All", "Without Photo", "Without Value"]
+};
+
+const reportFieldLabels = {
+  asset: "Asset",
+  assetStatus: "Asset Status",
+  category: "Category",
+  department: "Department",
+  location: "Location",
+  originDepartment: "Origin Department",
+  destinationDepartment: "Destination Department",
+  originLocation: "Origin Location",
+  destinationLocation: "Destination Location",
+  acquisitionDateFrom: "Acquisition Date From",
+  acquisitionDateTo: "Acquisition Date To",
+  transferType: "Transfer Type",
+  transferDateFrom: "Transfer Date From",
+  transferDateTo: "Transfer Date To",
+  detailLevel: "Detail Level",
+  agreementDetailLevel: "Detail Level",
+  retirementReason: "Retirement Reason",
+  retirementDateFrom: "Retirement Date From",
+  retirementDateTo: "Retirement Date To",
+  agreementType: "Agreement Type",
+  agreementStatus: "Agreement Status",
+  expiryDateFrom: "Expiry Date From",
+  expiryDateTo: "Expiry Date To",
+  expiringWithin: "Expiring Within",
+  startDateFrom: "Start Date From",
+  startDateTo: "Start Date To",
+  issueType: "Issue Type",
+  createdBy: "Created By",
+  createdDateFrom: "Created Date From",
+  createdDateTo: "Created Date To"
+};
+
+const reportFields = {
+  "rep-asset-register": {
+    basic: ["assetStatus", "category", "department", "location", "acquisitionDateFrom", "acquisitionDateTo", "asset"],
+    advanced: ["createdBy", "createdDateFrom", "createdDateTo"]
+  },
+  "rep-asset-movement": {
+    basic: ["detailLevel", "transferDateFrom", "transferDateTo", "transferType", "originDepartment", "destinationDepartment", "originLocation", "destinationLocation", "asset"],
+    advanced: ["createdBy", "createdDateFrom", "createdDateTo"]
+  },
+  "rep-asset-retirement": {
+    basic: ["detailLevel", "retirementReason", "retirementDateFrom", "retirementDateTo", "category", "department", "location", "asset"],
+    advanced: ["createdBy", "createdDateFrom", "createdDateTo"]
+  },
+  "rep-agreement": {
+    basic: ["agreementDetailLevel", "agreementType", "agreementStatus", "category", "department", "location", "asset"],
+    advanced: ["startDateFrom", "startDateTo", "expiryDateFrom", "expiryDateTo", "expiringWithin", "createdBy", "createdDateFrom", "createdDateTo"]
+  },
+  "rep-data-quality": {
+    basic: ["issueType", "assetStatus", "category", "department", "location", "asset"],
+    advanced: ["createdBy", "createdDateFrom", "createdDateTo"]
+  }
+};
+
+function defaultCriteriaFor(reportType) {
+  return { ...(reportDefaults[reportType] || {}) };
+}
+
+function ensureReportCriteria(reportType) {
+  if (!state.reportCriteria[reportType]) {
+    state.reportCriteria[reportType] = defaultCriteriaFor(reportType);
+  }
+  return state.reportCriteria[reportType];
+}
+
+function setReportDefaults(reportType) {
+  state.reportCriteria[reportType] = defaultCriteriaFor(reportType);
+  state.reportAdvancedOpen = false;
+}
+
+function openDashboardReport(target) {
+  const reportType = target.dataset.report;
+  state.moreMenuOpen = false;
+  state.mobileSheet = false;
+  state.reportType = reportType;
+  state.reportSource = "dashboard";
+  state.reportPreviewPage = 1;
+  setReportDefaults(reportType);
+  const criteria = ensureReportCriteria(reportType);
+
+  if (reportType === "rep-asset-register" && target.dataset.field) {
+    criteria[target.dataset.field] = target.dataset.value;
+  }
+
+  if (reportType === "rep-data-quality" && target.dataset.issue) {
+    criteria.issueType = target.dataset.issue === "without-photo" ? "Without Photo" : "Without Value";
+    state.reportIssueFilter = target.dataset.issue;
+  }
+
+  if (reportType === "rep-agreement") {
+    if (target.dataset.status) criteria.agreementStatus = target.dataset.status;
+    if (target.dataset.type) criteria.agreementType = target.dataset.type;
+    if (target.dataset.expiring) {
+      criteria.agreementStatus = "Active";
+      criteria.expiringWithin = target.dataset.expiring;
+    }
+  }
+
+  if (reportType === "rep-asset-movement" && target.dataset.month) {
+    const range = monthRange(target.dataset.month);
+    criteria.transferDateFrom = range.from;
+    criteria.transferDateTo = range.to;
+  }
+
+  if (reportType === "rep-asset-retirement" && target.dataset.month) {
+    const range = monthRange(target.dataset.month);
+    criteria.retirementDateFrom = range.from;
+    criteria.retirementDateTo = range.to;
+  }
+
+  setState({ mobilePage: "reportPreview" });
+}
+
+function monthRange(monthValue) {
+  const [year, month] = monthValue.split("-").map(Number);
+  const last = new Date(year, month, 0).getDate();
+  return {
+    from: `${year}-${String(month).padStart(2, "0")}-01`,
+    to: `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`
+  };
+}
+
+function renderReportCriteria() {
+  const meta = currentReportMeta();
+  const reportType = state.reportType;
+  const criteria = ensureReportCriteria(reportType);
+  const fields = reportFields[reportType] || reportFields["rep-asset-register"];
+  return `
+    ${mobileHeader(meta.name, meta.back)}
+    <div class="screen-content report-criteria-screen">
+      <section class="mobile-form-section report-section">
+        <h2>Basic Filters</h2>
+        ${renderReportFieldList(fields.basic, criteria)}
+      </section>
+      <section class="mobile-form-section report-section advanced-report-section ${state.reportAdvancedOpen ? "open" : ""}">
+        <button class="advanced-toggle" data-action="toggle-report-advanced">
+          <span>Advanced Filters</span>
+          <em>${state.reportAdvancedOpen ? "Hide" : "Show"}</em>
+        </button>
+        ${state.reportAdvancedOpen ? `<div class="advanced-fields">${renderReportFieldList(fields.advanced, criteria)}</div>` : ""}
+      </section>
+    </div>
+    <div class="mobile-form-actions">
+      <button class="btn ghost" data-action="reset-report-filters">Reset Filters</button>
+      <button class="btn primary" data-action="mobile-page" data-page="reportPreview">Generate Report</button>
+    </div>
+  `;
+}
+
+function renderReportFieldList(fields, criteria) {
+  const visibleFields = fields.filter((field) => shouldShowReportField(field, criteria));
+  const html = [];
+  for (let index = 0; index < visibleFields.length; index += 1) {
+    const field = visibleFields[index];
+    const next = visibleFields[index + 1];
+    if (field.endsWith("DateFrom") && next === field.replace("DateFrom", "DateTo")) {
+      html.push(renderReportDatePair(field, next, criteria));
+      index += 1;
+    } else if (isOriginDestinationPair(field, next)) {
+      html.push(renderReportCompactPair(field, next, criteria));
+      index += 1;
+    } else {
+      html.push(renderReportField(field, criteria[field]));
+    }
+  }
+  return html.join("");
+}
+
+function isOriginDestinationPair(field, next) {
+  return (field === "originDepartment" && next === "destinationDepartment") || (field === "originLocation" && next === "destinationLocation");
+}
+
+function shouldShowReportField(field, criteria) {
+  if (state.reportType !== "rep-asset-movement") return true;
+  if (criteria.transferType === "Department Transfer" && (field === "originLocation" || field === "destinationLocation")) return false;
+  if (criteria.transferType === "Location Transfer" && (field === "originDepartment" || field === "destinationDepartment")) return false;
+  return true;
+}
+
+function renderReportDatePair(fromField, toField, criteria) {
+  return `
+    <div class="report-date-pair">
+      ${renderReportField(fromField, criteria[fromField])}
+      ${renderReportField(toField, criteria[toField])}
+    </div>
+  `;
+}
+
+function renderReportCompactPair(leftField, rightField, criteria) {
+  return `
+    <div class="report-date-pair report-compact-pair">
+      ${renderReportField(leftField, criteria[leftField])}
+      ${renderReportField(rightField, criteria[rightField])}
+    </div>
+  `;
+}
+
+function renderReportField(field, value = "") {
+  const label = reportFieldLabels[field] || field;
+  if (field === "asset") {
+    return `
+      <div class="mobile-line-field report-field">
+        <label>${label}</label>
+        <input data-field="report-${field}" value="${value}" placeholder="Search Asset Code or Asset Name" />
+      </div>
+    `;
+  }
+  if (field.endsWith("DateFrom") || field.endsWith("DateTo")) {
+    return `
+      <div class="mobile-line-field report-field">
+        <label>${label}</label>
+        <input data-field="report-${field}" type="date" value="${value}" />
+      </div>
+    `;
+  }
+  if (reportOptions[field]) {
+    return `
+      <div class="mobile-line-field report-field">
+        <label>${label}</label>
+        <select data-field="report-${field}">
+          ${reportOptions[field].map((item) => option(item, item, value)).join("")}
+        </select>
+      </div>
+    `;
+  }
+  return `
+    <div class="mobile-line-field report-field">
+      <label>${label}</label>
+      <input data-field="report-${field}" value="${value}" />
+    </div>
+  `;
+}
+
+function renderReportSummary() {
+  const meta = currentReportMeta();
+  const isDQ = state.reportType === "rep-data-quality";
+  return `
+    ${mobileHeader(meta.name, "reportCriteria")}
+    <div class="screen-content mobile-transfer-form">
+      <section class="mobile-form-section">
+        <h2>Summary</h2>
+        ${isDQ ? `
+          <div class="transfer-info-card">
+            <div><span>Without Photo</span><strong>18 assets</strong></div>
+            <div><span>Without Value</span><strong>31 assets</strong></div>
+          </div>
+        ` : `
+          <div class="transfer-info-card">
+            <div><span>Total Records</span><strong>142</strong></div>
+            <div><span>Period</span><strong>01-06-2026 – 30-06-2026</strong></div>
+            <div><span>Generated</span><strong>10-06-2026 09:41</strong></div>
+          </div>
+        `}
+      </section>
+    </div>
+    <div class="mobile-form-actions">
+      <button class="btn ghost" data-action="mobile-page" data-page="reportCriteria">Back</button>
+      <button class="btn primary" data-action="mobile-page" data-page="reportPreview">Preview</button>
+    </div>
+  `;
+}
+
+function renderReportPreview() {
+  const meta = currentReportMeta();
+  const isDQ = state.reportType === "rep-data-quality";
+  const dqSamples = [
+    { code: "AST-0001", desc: "Laptop Dell",    issue: "Missing Photo"          },
+    { code: "AST-0002", desc: "Forklift",       issue: "Missing Purchase Value" },
+    { code: "AST-0007", desc: "Office Chair",   issue: "Missing Photo"          },
+    { code: "AST-0011", desc: "Server Rack",    issue: "Missing Purchase Value" }
+  ];
+  const filtered = isDQ && state.reportIssueFilter !== "all"
+    ? dqSamples.filter(s => (state.reportIssueFilter === "without-photo" ? s.issue === "Missing Photo" : s.issue === "Missing Purchase Value"))
+    : dqSamples;
+  return `
+    ${mobileHeader(meta.name, "reportSummary")}
+    <div class="screen-content" style="padding:16px 14px 100px;">
+      ${isDQ ? filtered.map(s => `
+        <div class="dq-preview-card">
+          <div class="dq-preview-code">${s.code}</div>
+          <div class="dq-preview-desc">${s.desc}</div>
+          <div class="dq-preview-issue">Issue: ${s.issue}</div>
+        </div>
+      `).join("") : `
+        <div class="dash-chart-card" style="text-align:center;">
+          <div class="dash-chart-label">${meta.name}</div>
+          <div class="dash-chart-mock">Report preview — mockup only</div>
+        </div>
+      `}
+    </div>
+    <div class="mobile-form-actions">
+      <button class="btn ghost" data-action="mobile-page" data-page="reportSummary">Back</button>
+      <button class="btn primary" data-action="mock-only">Export PDF</button>
+    </div>
+  `;
+}
+
+function renderMobileReportPlaceholder() {
+  return renderReportCriteria();
+}
+
+function renderReportPreview() {
+  const meta = currentReportMeta();
+  const pages = getPdfReportPages(state.reportType);
+  const currentPage = Math.min(state.reportPreviewPage, pages.length);
+  const backPage = state.reportSource === "dashboard" ? "dashboard" : "reportCriteria";
+  return `
+    ${mobileHeader(meta.name, backPage)}
+    <div class="report-viewer-actions">
+      <button class="report-action-btn" data-action="mock-only">Share</button>
+      <button class="report-action-btn primary" data-action="mock-only">Download</button>
+    </div>
+    <div class="screen-content report-preview-screen">
+      ${renderPageNavigator("report-preview-page", currentPage, pages.length)}
+      ${pages[currentPage - 1]}
+    </div>
+  `;
+}
+
+function renderPdfReport(reportType) {
+  return getPdfReportPages(reportType).join("");
+}
+
+function getPdfReportPages(reportType) {
+  const meta = currentReportMeta();
+  const header = renderPdfHeader(pdfReportTitle(meta.name));
+  const summary = state.reportTemplate.showSummary ? `<section class="pdf-section"><h2>Summary</h2>${renderPdfSummary(reportType)}</section>` : "";
+  if (state.reportTemplate.showCriteria) {
+    return [`
+      <div class="pdf-page">
+        ${header}
+        <section class="pdf-section">
+          <h2>Criteria Selection</h2>
+          ${renderPdfCriteria(reportType)}
+        </section>
+        ${summary}
+        ${renderPdfFooter()}
+      </div>
+    `, `
+      <div class="pdf-page">
+        <section class="pdf-section pdf-detail-section">
+          <h2>Detail</h2>
+          ${renderPdfDetail(reportType)}
+        </section>
+        ${renderPdfFooter()}
+      </div>
+    `];
+  }
+  return [`
+    <div class="pdf-page">
+      ${header}
+      ${summary}
+      <section class="pdf-section pdf-detail-section">
+        <h2>Detail</h2>
+        ${renderPdfDetail(reportType)}
+      </section>
+      ${renderPdfFooter()}
+    </div>
+  `];
+}
+
+function renderPageNavigator(action, page, total) {
+  if (total <= 1) return "";
+  return `
+    <div class="pdf-page-nav">
+      <button data-action="${action}" data-dir="-1" ${page <= 1 ? "disabled" : ""}>&lt; Previous Page</button>
+      <span>Page ${page} of ${total}</span>
+      <button data-action="${action}" data-dir="1" ${page >= total ? "disabled" : ""}>Next Page &gt;</button>
+    </div>
+  `;
+}
+
+function pdfReportTitle(name) {
+  return name.endsWith("Report") ? name : `${name} Report`;
+}
+
+function renderPdfHeader(title) {
+  return `
+    <section class="pdf-section pdf-report-header">
+      ${state.reportTemplate.showLogo ? `<div class="transaction-logo report-pdf-logo">LOGO</div>` : ""}
+      <h1>${title}</h1>
+    </section>
+  `;
+}
+
+function renderPdfFooter() {
+  return `
+    <footer class="pdf-footer">
+      <span>Generated from iReap Asset</span>
+      <span>Print Time : 11-Jun-2026 14:35</span>
+    </footer>
+  `;
+}
+
+function pdfInfo(label, value) {
+  return `<div><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function pdfStack(lines) {
+  return `<div class="pdf-stack">${lines.filter(Boolean).map((line, index) => index ? `<span>${line}</span>` : `<strong>${line}</strong>`).join("")}</div>`;
+}
+
+function pdfList(lines) {
+  return `<div class="pdf-stack">${lines.filter(Boolean).map((line) => `<span>${line}</span>`).join("")}</div>`;
+}
+
+function pdfMoney(value) {
+  return `IDR ${value}`;
+}
+
+function renderPdfCriteria(reportType) {
+  const criteria = ensureReportCriteria(reportType);
+  const fields = reportFields[reportType] || reportFields["rep-asset-register"];
+  const names = compactCriteriaFields([...fields.basic, ...fields.advanced]).filter((field) => shouldShowPdfCriteriaField(reportType, field, criteria));
+  return `
+    <div class="pdf-criteria-grid">
+      ${names.map((field) => pdfInfo(compactCriteriaLabel(field), compactCriteriaValue(field, criteria))).join("")}
+    </div>
+  `;
+}
+
+function shouldShowPdfCriteriaField(reportType, field, criteria) {
+  if (reportType !== "rep-asset-movement") return true;
+  if (criteria.transferType === "Department Transfer" && (field === "originLocation" || field === "destinationLocation")) return false;
+  if (criteria.transferType === "Location Transfer" && (field === "originDepartment" || field === "destinationDepartment")) return false;
+  return true;
+}
+
+function compactCriteriaFields(fields) {
+  return fields.filter((field) => !field.endsWith("DateTo"));
+}
+
+function compactCriteriaLabel(field) {
+  if (field.endsWith("DateFrom")) return reportFieldLabels[field].replace(" From", "");
+  return reportFieldLabels[field];
+}
+
+function compactCriteriaValue(field, criteria) {
+  if (field.endsWith("DateFrom")) {
+    const toField = field.replace("DateFrom", "DateTo");
+    return formatCriteriaDateRange(criteria[field], criteria[toField]);
+  }
+  return criteria[field] || "All";
+}
+
+function formatCriteriaDateRange(from, to) {
+  if (from && to) return `${formatReportDate(from)} - ${formatReportDate(to)}`;
+  if (from) return `From ${formatReportDate(from)}`;
+  if (to) return `Until ${formatReportDate(to)}`;
+  return "All";
+}
+
+function formatReportDate(value) {
+  if (!value) return "";
+  const parts = value.split("-");
+  if (parts.length !== 3) return value;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${parts[2]}-${months[Number(parts[1]) - 1] || parts[1]}-${parts[0]}`;
+}
+
+function renderPdfSummary(reportType) {
+  const items = {
+    "rep-asset-register": [
+      ["Total Assets", "142"],
+      ["Active", "118"],
+      ["Inactive", "16"],
+      ["Retired", "8"],
+      ["Total Amount", "IDR 2.4B"]
+    ],
+    "rep-asset-movement": [
+      ["Total Transfers", "14"],
+      ["Department Transfer", "6"],
+      ["Location Transfer", "8"],
+      ["Total Assets Moved", "41"]
+    ],
+    "rep-asset-retirement": [
+      ["Total Retirements", "12"],
+      ["Sold", "3"],
+      ["Damaged", "4"],
+      ["Obsolete", "2"],
+      ["Donated", "1"],
+      ["Scrapped", "2"]
+    ],
+    "rep-agreement": [
+      ["Status", "Warranty", "Insurance", "Contract / License"],
+      ["All", "21", "15", "11"],
+      ["Active", "16", "13", "9"],
+      ["Expiring Soon", "3", "1", "1"],
+      ["Expired", "2", "1", "1"]
+    ],
+    "rep-data-quality": [
+      ["Affected Assets", "42"],
+      ["Without Photo", "18"],
+      ["Without Value", "31"]
+    ]
+  }[reportType] || [];
+  if (reportType === "rep-agreement") return pdfMatrixSummary(items);
+  return pdfSummaryTable(items);
+}
+
+function pdfMatrixSummary(rows) {
+  const [headers, ...body] = rows;
+  return `
+    <table class="pdf-summary-table agreement-summary-table">
+      <thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead>
+      <tbody>${body.map((row) => `<tr>${row.map((value) => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  `;
+}
+
+function pdfSummaryTable(items) {
+  return `
+    <table class="pdf-summary-table">
+      <thead><tr>${items.map(([label]) => `<th>${label}</th>`).join("")}</tr></thead>
+      <tbody><tr>${items.map(([, value]) => `<td>${value}</td>`).join("")}</tr></tbody>
+    </table>
+  `;
+}
+
+function renderPdfDetail(reportType) {
+  if (reportType === "rep-asset-register") return renderAssetRegisterPdfDetail();
+  if (reportType === "rep-asset-movement") return renderMovementPdfDetail();
+  if (reportType === "rep-asset-retirement") return renderRetirementPdfDetail();
+  if (reportType === "rep-agreement") return renderAgreementPdfDetail();
+  if (reportType === "rep-data-quality") return renderDataQualityPdfDetail();
+  return "";
+}
+
+function renderAssetRegisterPdfDetail() {
+  const rows = assets.map((asset, index) => ({
+    no: index + 1,
+    asset: pdfStack([asset.code, asset.description, assetStatusLabel(asset)]),
+    allocation: pdfStack([asset.category, asset.department, asset.location]),
+    purchase: pdfStack([`0${index + 1}-06-2026`, pdfMoney(["18,500,000", "21,000,000", "1,250,000", "4,800,000", "3,200,000"][index] || "1,000,000"), ["PT Vendor Alpha", "PT Digital Nusantara", "Office Supply Co.", "PT Printindo", "Furniture Central"][index]])
+  }));
+  return pdfTable(["No.", "Asset", "Allocation", "Purchase"], rows, ["no", "asset", "allocation", "purchase"], "asset-register-table");
+}
+
+function renderMovementPdfDetail() {
+  const criteria = ensureReportCriteria("rep-asset-movement");
+  const rows = transfers.map((transfer, index) => ({
+      no: index + 1,
+      transfer: pdfStack([transfer.no, transfer.date]),
+      type: transfer.type === "Department" ? "Department Transfer" : "Location Transfer",
+      movement: transfer.type === "Department" ? `${transfer.fromDepartment} → ${transfer.toDepartment}` : `${transfer.fromLocation} → ${transfer.toLocation}`,
+      assets: `${transfer.assetIds.length} assets`
+    }));
+  if (criteria.detailLevel !== "Include Asset List") {
+    return pdfTable(["No.", "Transfer", "Type", "Movement", "Assets"], rows, ["no", "transfer", "type", "movement", "assets"], "movement-detail-table");
+  }
+  return pdfMasterDetailTable(
+    ["No.", "Transfer", "Type", "Movement", "Assets"],
+    rows,
+    ["no", "transfer", "type", "movement", "assets"],
+    transfers.map((transfer) => transfer.assetIds.map((id) => assets.find((asset) => asset.id === id))),
+    "movement-detail-table"
+  );
+}
+
+function renderRetirementPdfDetail() {
+  const criteria = ensureReportCriteria("rep-asset-retirement");
+  const rows = retirements.map((retirement, index) => ({
+      no: index + 1,
+      retirement: pdfStack([retirement.no, retirement.date]),
+      reason: retirement.reason,
+      assets: `${retirement.assetIds.length} assets`
+    }));
+  if (criteria.detailLevel !== "Include Asset List") {
+    return pdfTable(["No.", "Retirement", "Reason", "Assets"], rows, ["no", "retirement", "reason", "assets"], "retirement-detail-table");
+  }
+  return pdfMasterDetailTable(
+    ["No.", "Retirement", "Reason", "Assets"],
+    rows,
+    ["no", "retirement", "reason", "assets"],
+    retirements.map((retirement) => retirement.assetIds.map((id) => assets.find((asset) => asset.id === id))),
+    "retirement-detail-table"
+  );
+}
+
+function renderAgreementPdfDetail() {
+  const criteria = ensureReportCriteria("rep-agreement");
+  const rows = agreementDetailRows();
+  if (criteria.agreementDetailLevel !== "Include Asset List") {
+    return pdfTable(["No.", "Agreement", "Assets", "Status", "Value (IDR)"], rows, ["no", "agreement", "assetCount", "period", "value"], "agreement-detail-table");
+  }
+  return pdfMasterDetailTable(
+    ["No.", "Agreement", "Assets", "Status", "Value (IDR)"],
+    rows,
+    ["no", "agreement", "assetCount", "period", "value"],
+    rows.map((row) => row.assetList),
+    "agreement-detail-table"
+  );
+}
+
+function agreementDetailRows() {
+  return [
+    { type: "Warranty", no: "WAR-2026-0001", title: "Laptop Warranty", desc: "Extended service coverage", status: "Active", assetIds: [216, 215], start: "01-Jan-2026", end: "31-Dec-2026", value: ["Cost: 2,500,000"], cost: "2,500,000", createdBy: "Jennie", createdDate: "01-01-2026 09:30" },
+    { type: "Warranty", no: "WAR-2026-0002", title: "Printer Warranty", desc: "Parts and service", status: "Expiring Soon", assetIds: [218], start: "01-Jul-2025", end: "30-Jun-2026", value: ["Cost: 900,000"], cost: "900,000", createdBy: "Administrator", createdDate: "01-07-2025 10:15" },
+    { type: "Insurance", no: "INS-2026-0001", title: "Asset Insurance", desc: "Operational asset policy", status: "Active", assetIds: [217, 219], start: "01-Feb-2026", end: "31-Jan-2027", value: ["Premium: 1,200,000", "Deductible: 500,000", "Coverage: 75,000,000"], premium: "1,200,000", deductible: "500,000", coverage: "75,000,000", createdBy: "Finance User", createdDate: "01-02-2026 11:00" },
+    { type: "Contract / License", no: "CON-2026-0001", title: "Software License", desc: "Annual application license", status: "Active", assetIds: [215, 216, 217], start: "01-Mar-2026", end: "28-Feb-2027", value: ["Fee: 6,000,000"], fee: "6,000,000", createdBy: "Jennie", createdDate: "01-03-2026 14:45" }
+  ].map((item, index) => ({
+    no: index + 1,
+    title: item.title,
+    desc: item.desc,
+    type: item.type,
+    assetList: item.assetIds.map((id) => assets.find((asset) => asset.id === id)).filter(Boolean),
+    statusText: item.status,
+    start: item.start,
+    end: item.end,
+    valueItems: item.value,
+    cost: item.cost,
+    premium: item.premium,
+    deductible: item.deductible,
+    coverage: item.coverage,
+    fee: item.fee,
+    createdBy: item.createdBy,
+    createdDate: item.createdDate,
+    agreement: pdfStack([item.title, item.desc, `Type: ${item.type}`]),
+    assetCount: `${item.assetIds.length} assets`,
+    period: pdfStack([item.status, item.start, item.end]),
+    value: pdfList(item.value)
+  }));
+}
+
+function renderDataQualityPdfDetail() {
+  const rows = [
+    [assets[0], ["Without Photo"]],
+    [assets[1], ["Without Value"]],
+    [assets[2], ["Without Photo", "Without Value"]],
+    [assets[4], ["Without Value"]]
+  ].map(([asset, issues], index) => ({
+    no: index + 1,
+    asset: pdfStack([asset.code, asset.description, assetStatusLabel(asset)]),
+    allocation: pdfStack([asset.category, asset.department, asset.location]),
+    issue: pdfList(issues)
+  }));
+  return pdfTable(["No.", "Asset", "Allocation", "Issue Type"], rows, ["no", "asset", "allocation", "issue"], "data-quality-table");
+}
+
+function pdfTable(headers, rows, keys, className = "") {
+  return `
+    <table class="pdf-table ${className}">
+      <thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${rows.map((row) => `<tr>${keys.map((key) => `<td>${row[key] || ""}</td>`).join("")}</tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function pdfMasterDetailTable(headers, rows, keys, childGroups, className = "") {
+  return `
+    <table class="pdf-table master-detail-table ${className}">
+      <thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${rows.map((row, index) => `
+          <tr class="master-row">${keys.map((key) => `<td>${row[key] || ""}</td>`).join("")}</tr>
+          <tr class="child-row">
+            <td colspan="${headers.length}">
+              <div class="asset-child-block">
+                <div class="asset-child-list">
+                  ${childGroups[index].map((asset, childIndex) => `
+                    <div class="asset-child-item">
+                      <span>${childIndex + 1}</span>
+                      <strong>${asset.code}</strong>
+                      <em>${asset.description}</em>
+                    </div>
+                  `).join("")}
+                </div>
+              </div>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function reportItem(label, description, reportType, icon, colorClass) {
+  return `
+    <button class="report-item" data-action="report-nav" data-page="reportCriteria" data-report="${reportType}">
+      <span class="report-icon ${colorClass}">${icon}</span>
+      <span class="report-text">
+        <strong>${label}</strong>
+        <em>${description}</em>
+      </span>
+      <span class="setup-arrow">&gt;</span>
+    </button>
   `;
 }
 
@@ -1480,7 +3289,7 @@ function mobileCategory(label, icon, bg, action, page) {
   return `
     <button class="category-btn" data-action="${action}" ${page ? `data-page="${page}"` : ""}>
       <span class="category-icon" style="background:${bg}">${icon}</span>
-      ${label}
+      <span class="category-label">${label}</span>
     </button>
   `;
 }
@@ -1836,11 +3645,12 @@ function mobileInfo(label, value) {
   return `<div><span>${label}</span><strong>${value}</strong></div>`;
 }
 
-function mobileHeader(title, backPage) {
+function mobileHeader(title, backPage, rightContent = "") {
   return `
     <header class="mobile-header compact">
       <button class="mobile-back" data-action="mobile-page" data-page="${backPage}">&lt;</button>
       <div class="mobile-title">${title}</div>
+      ${rightContent ? `<div class="mobile-header-right">${rightContent}</div>` : ""}
     </header>
   `;
 }
@@ -1871,6 +3681,7 @@ function setupItem(label, icon, colorClass, action, page) {
 
 function renderMobileTemplates() {
   const isTransaction = state.template.templateType === "transaction";
+  const isReport = state.template.templateType === "report";
   return `
     ${mobileHeader("Print Templates", "setup")}
     <div class="screen-content mobile-template-screen">
@@ -1883,6 +3694,7 @@ function renderMobileTemplates() {
         <select class="mobile-select" data-field="template-type">
           ${option("asset-label", "Asset Label", state.template.templateType)}
           ${option("transaction", "Transaction", state.template.templateType)}
+          ${option("report", "Report", state.template.templateType)}
         </select>
       </div>
       ${isTransaction ? `
@@ -1903,6 +3715,32 @@ function renderMobileTemplates() {
           </label>
         </div>
         ${state.transactionTemplate.preview ? `<div class="mobile-template-preview transaction-mobile-preview">${renderTransactionDocument(null)}</div>` : ""}
+      ` : isReport ? `
+        <div class="mobile-template-box transaction-mobile-box">
+          <h2>Report Template</h2>
+          <div class="mobile-field">
+            <label>Default Paper Size</label>
+            <select class="mobile-select" data-field="report-template-paper">
+              ${option("A4", "A4", state.reportTemplate.paperSize)}
+              ${option("Letter", "Letter", state.reportTemplate.paperSize)}
+              ${option("Legal", "Legal", state.reportTemplate.paperSize)}
+              ${option("F4", "F4 / Folio", state.reportTemplate.paperSize)}
+            </select>
+          </div>
+          <label class="mobile-check">
+            <input type="checkbox" data-field="report-template-logo" ${state.reportTemplate.showLogo ? "checked" : ""} />
+            Show company logo
+          </label>
+          <label class="mobile-check">
+            <input type="checkbox" data-field="report-template-criteria" ${state.reportTemplate.showCriteria ? "checked" : ""} />
+            Show criteria section
+          </label>
+          <label class="mobile-check">
+            <input type="checkbox" data-field="report-template-summary" ${state.reportTemplate.showSummary ? "checked" : ""} />
+            Show summary section
+          </label>
+        </div>
+        ${state.reportTemplate.preview ? `<div class="mobile-template-preview transaction-mobile-preview">${renderReportTemplateDocument()}</div>` : ""}
       ` : `
       <div class="mobile-template-box">
         <h2>Asset Label Template</h2>
@@ -2021,7 +3859,33 @@ function detailRow(label, value) {
   return `<div class="detail-row"><span>${label}</span><span>${value}</span></div>`;
 }
 
+function renderSupportSheet() {
+  return `
+    <div class="bottom-sheet-backdrop">
+      <div class="bottom-sheet">
+        <div class="sheet-title">
+          <h3>Contact Support</h3>
+          <button class="mobile-icon-btn" data-action="close-mobile-sheet" style="color:#8a929e;font-size:22px;line-height:1;">&#x2715;</button>
+        </div>
+        <p style="margin:0 0 22px;color:#6d7480;font-size:15px;">Need help with iReap Asset?</p>
+        <div class="support-sheet-actions">
+          <button class="support-btn whatsapp" data-action="mock-only">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.962-1.418A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a7.96 7.96 0 0 1-4.065-1.112l-.291-.173-3.024.865.84-3.094-.19-.317A7.96 7.96 0 0 1 4 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z"/></svg>
+            WhatsApp Support
+          </button>
+          <button class="support-btn email" data-action="mock-only">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 7 10-7"/></svg>
+            Email Support
+          </button>
+          <button class="support-btn cancel" data-action="close-mobile-sheet">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderMobileSheet() {
+  if (state.mobileSheet === "support") return renderSupportSheet();
   if (state.mobileSheet === "transfer-filter") return renderMobileTransferFilter();
   if (state.mobileSheet === "retirement-filter") return renderMobileRetirementFilter();
   if (state.mobileSheet === "asset-picker") return renderMobileAssetPicker();
@@ -2201,12 +4065,14 @@ document.addEventListener("click", (event) => {
   if (action === "landing") {
     state.modal = null;
     state.mobileSheet = false;
+    state.moreMenuOpen = false;
     setState({ mode: "landing" });
     return;
   }
 
   if (action === "web-page") {
     state.modal = null;
+    if (target.dataset.page === "webReport") state.reportType = state.webReportType;
     if (target.dataset.page === "mass") {
       state.massFiltered = false;
       state.massSelected.clear();
@@ -2219,6 +4085,55 @@ document.addEventListener("click", (event) => {
     if (target.dataset.id) state.selectedAssetId = Number(target.dataset.id);
     state.assetTab = "detail";
     setState({ webPage: "assetDetail" });
+    return;
+  }
+
+  if (action === "web-report-nav") {
+    state.webReportType = target.dataset.report;
+    state.reportType = target.dataset.report;
+    state.webReportAdvancedOpen = false;
+    setReportDefaults(target.dataset.report);
+    setState({ webPage: "webReport" });
+    return;
+  }
+
+  if (action === "web-report-search") {
+    render();
+    return;
+  }
+
+  if (action === "web-report-reset") {
+    setReportDefaults(state.webReportType);
+    state.webReportAdvancedOpen = false;
+    render();
+    return;
+  }
+
+  if (action === "web-report-pdf") {
+    state.reportType = state.webReportType;
+    state.reportPreviewPage = 1;
+    setState({ webPage: "webReportPdf" });
+    return;
+  }
+
+  if (action === "toggle-web-column-settings") {
+    state.webColumnSettingsOpen = !state.webColumnSettingsOpen;
+    render();
+    return;
+  }
+
+  if (action === "toggle-web-report-advanced") {
+    state.webReportAdvancedOpen = !state.webReportAdvancedOpen;
+    render();
+    return;
+  }
+
+  if (action === "web-column-toggle") {
+    const reportType = state.webReportType;
+    state.webReportHiddenColumns[reportType] = state.webReportHiddenColumns[reportType] || {};
+    const key = target.dataset.key;
+    state.webReportHiddenColumns[reportType][key] = isWebColumnVisible(reportType, key);
+    render();
     return;
   }
 
@@ -2236,6 +4151,12 @@ document.addEventListener("click", (event) => {
 
   if (action === "toggle-operations") {
     state.operationsOpen = !state.operationsOpen;
+    render();
+    return;
+  }
+
+  if (action === "toggle-reports") {
+    state.reportsOpen = !state.reportsOpen;
     render();
     return;
   }
@@ -2437,12 +4358,15 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "save-template") {
-    showToast(state.template.templateType === "transaction" ? "Transaction template settings saved for mockup." : "Template settings saved for mockup.");
+    const label = templateTypeLabel(state.template.templateType);
+    showToast(`${label} template settings saved for mockup.`);
     return;
   }
 
   if (action === "preview-template") {
+    state.reportTemplatePreviewPage = 1;
     if (state.template.templateType === "transaction") state.transactionTemplate.preview = true;
+    else if (state.template.templateType === "report") state.reportTemplate.preview = true;
     else state.template.preview = true;
     render();
     return;
@@ -2472,9 +4396,110 @@ document.addEventListener("click", (event) => {
 
   if (action === "mobile-page") {
     state.mobileSheet = false;
+    state.moreMenuOpen = false;
     if (target.dataset.id) state.selectedAssetId = Number(target.dataset.id);
     if (target.dataset.page === "detail") state.assetTab = "detail";
+    if (target.dataset.page === "reportPreview") {
+      state.reportPreviewPage = 1;
+      state.reportSource = "reports";
+    }
+    if (target.dataset.report) {
+      state.reportType = target.dataset.report;
+      setReportDefaults(state.reportType);
+    }
     setState({ mobilePage: target.dataset.page });
+    return;
+  }
+
+  if (action === "toggle-more-menu") {
+    state.moreMenuOpen = !state.moreMenuOpen;
+    render();
+    return;
+  }
+
+  if (action === "open-support-sheet") {
+    state.moreMenuOpen = false;
+    state.mobileSheet = "support";
+    render();
+    return;
+  }
+
+  if (action === "category-page") {
+    state.categoryPage = Number(target.dataset.p);
+    render();
+    return;
+  }
+
+  if (action === "dashboard-tab") {
+    state.dashboardTab = target.dataset.tab;
+    render();
+    return;
+  }
+
+  if (action === "dash-asset-seg") {
+    state[target.dataset.field] = target.dataset.val;
+    render();
+    return;
+  }
+
+  if (action === "dashboard-report") {
+    openDashboardReport(target);
+    return;
+  }
+
+  if (action === "report-nav") {
+    state.moreMenuOpen = false;
+    state.mobileSheet = false;
+    state.reportType = target.dataset.report;
+    state.reportSource = "reports";
+    state.reportIssueFilter = target.dataset.issue || "all";
+    state.reportFlow = "criteria";
+    setReportDefaults(state.reportType);
+    if (state.reportType === "rep-data-quality" && target.dataset.issue) {
+      state.reportCriteria[state.reportType].issueType = target.dataset.issue === "without-photo" ? "Without Photo" : "Without Value";
+    }
+    if (state.reportType === "rep-agreement" && target.dataset.issue) {
+      state.reportCriteria[state.reportType].agreementStatus = target.dataset.issue === "expired" ? "Expired" : "Expiring Soon";
+    }
+    setState({ mobilePage: "reportCriteria" });
+    return;
+  }
+
+  if (action === "report-info") {
+    showToast("Mobile Reports are optimized for quick PDF generation. For Excel, CSV, and advanced columns, use iReap Asset Web.");
+    return;
+  }
+
+  if (action === "toggle-report-advanced") {
+    state.reportAdvancedOpen = !state.reportAdvancedOpen;
+    render();
+    return;
+  }
+
+  if (action === "reset-report-filters") {
+    setReportDefaults(state.reportType);
+    render();
+    return;
+  }
+
+  if (action === "report-preview-page") {
+    const total = getPdfReportPages(state.reportType).length;
+    state.reportPreviewPage = Math.max(1, Math.min(total, state.reportPreviewPage + Number(target.dataset.dir)));
+    render();
+    return;
+  }
+
+  if (action === "web-report-preview-page") {
+    const total = getPdfReportPages(state.webReportType).length;
+    state.reportPreviewPage = Math.max(1, Math.min(total, state.reportPreviewPage + Number(target.dataset.dir)));
+    render();
+    return;
+  }
+
+  if (action === "report-template-preview-page") {
+    const total = getReportTemplatePreviewPages().length;
+    state.reportTemplatePreviewPage = Math.max(1, Math.min(total, state.reportTemplatePreviewPage + Number(target.dataset.dir)));
+    render();
     return;
   }
 
@@ -2616,6 +4641,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "mock-only") {
+    state.moreMenuOpen = false;
     showToast("Mockup only");
   }
 });
@@ -2643,6 +4669,8 @@ document.addEventListener("change", (event) => {
     state.template.templateType = event.target.value;
     state.template.preview = false;
     state.transactionTemplate.preview = false;
+    state.reportTemplate.preview = false;
+    state.reportTemplatePreviewPage = 1;
     render();
   }
 
@@ -2658,6 +4686,29 @@ document.addEventListener("change", (event) => {
 
   if (field === "transaction-logo") {
     state.transactionTemplate.showLogo = event.target.checked;
+    render();
+  }
+
+  if (field === "report-template-paper") {
+    state.reportTemplate.paperSize = event.target.value;
+    state.reportTemplatePreviewPage = 1;
+    render();
+  }
+
+  if (field === "report-template-logo") {
+    state.reportTemplate.showLogo = event.target.checked;
+    render();
+  }
+
+  if (field === "report-template-criteria") {
+    state.reportTemplate.showCriteria = event.target.checked;
+    state.reportTemplatePreviewPage = 1;
+    render();
+  }
+
+  if (field === "report-template-summary") {
+    state.reportTemplate.showSummary = event.target.checked;
+    state.reportTemplatePreviewPage = 1;
     render();
   }
 
@@ -2693,6 +4744,26 @@ document.addEventListener("change", (event) => {
     render();
   }
 
+  if (field && field.startsWith("report-")) {
+    const reportField = field.replace("report-", "");
+    const criteria = ensureReportCriteria(state.reportType);
+    criteria[reportField] = event.target.value;
+    if (reportField === "issueType") {
+      state.reportIssueFilter = {
+        "Without Photo": "without-photo",
+        "Without Value": "without-value"
+      }[event.target.value] || "all";
+    }
+    render();
+  }
+
+  if (field && field.startsWith("web-report-")) {
+    const reportField = field.replace("web-report-", "");
+    const criteria = ensureReportCriteria(state.webReportType);
+    criteria[reportField] = event.target.value;
+    if (reportField === "transferType" || reportField === "detailLevel" || reportField === "agreementDetailLevel") render();
+  }
+
   if (field && field.startsWith("transfer-")) {
     const resetFields = ["transfer-type", "transfer-from-location", "transfer-from-department"];
     if (resetFields.includes(field) && state.transferSelected.size) {
@@ -2711,6 +4782,14 @@ document.addEventListener("change", (event) => {
     if (field === "transfer-to-department") state.transferForm.toDepartment = event.target.value;
     render();
   }
+});
+
+document.addEventListener("input", (event) => {
+  const field = event.target.dataset.field;
+  if (!field || !field.startsWith("report-")) return;
+  const reportField = field.replace("report-", "");
+  const criteria = ensureReportCriteria(state.reportType);
+  criteria[reportField] = event.target.value;
 });
 
 render();
