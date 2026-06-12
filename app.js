@@ -114,12 +114,41 @@ const retirements = [
   retirementDefaults
 ];
 
+const inboxSeed = [
+  { id: 1, category: "Agreement", severity: "Warning", title: "Agreement Expiring Soon", description: "Laptop Warranty will expire within 30 days.", date: "12-Jun-2026 09:15", read: false },
+  { id: 2, category: "Subscription", severity: "Warning", title: "Trial Expiring Soon", description: "Your trial period has 11 days remaining.", date: "12-Jun-2026 08:30", read: false },
+  { id: 3, category: "System", severity: "Info", title: "New Feature Available", description: "Report dashboard drilldown is now available.", date: "11-Jun-2026 16:45", read: false },
+  { id: 4, category: "Agreement", severity: "Critical", title: "Agreement Expired", description: "Printer Warranty has expired.", date: "10-Jun-2026 10:20", read: true },
+  { id: 5, category: "Subscription", severity: "Critical", title: "Payment Failed", description: "Subscription payment could not be processed.", date: "09-Jun-2026 13:00", read: false },
+  { id: 6, category: "User Adoption", severity: "Info", title: "Users Inactive 30 Days", description: "3 users have not accessed the system in 30 days.", date: "08-Jun-2026 11:40", read: true },
+  { id: 7, category: "System", severity: "Info", title: "Scheduled Maintenance", description: "Maintenance is scheduled this weekend.", date: "07-Jun-2026 17:00", read: true },
+  { id: 8, category: "Subscription", severity: "Info", title: "Subscription Order Created", description: "A subscription order has been created.", date: "06-Jun-2026 14:05", read: true },
+  { id: 9, category: "Subscription", severity: "Critical", title: "Trial Expired", description: "The trial period has ended.", date: "05-Jun-2026 09:00", read: true },
+  { id: 10, category: "Subscription", severity: "Warning", title: "Subscription Expiring Soon", description: "Subscription will expire soon.", date: "04-Jun-2026 15:10", read: true },
+  { id: 11, category: "Subscription", severity: "Critical", title: "Subscription Expired", description: "Subscription has expired.", date: "03-Jun-2026 12:25", read: true },
+  { id: 12, category: "Subscription", severity: "Info", title: "Subscription Activated", description: "Subscription has been activated.", date: "02-Jun-2026 10:20", read: true },
+  { id: 13, category: "Subscription", severity: "Warning", title: "Subscription Order Expired", description: "A pending subscription order has expired.", date: "01-Jun-2026 17:35", read: true },
+  { id: 14, category: "User Adoption", severity: "Warning", title: "Users Never Logged In", description: "2 invited users have never logged in.", date: "31-May-2026 08:45", read: true },
+  { id: 15, category: "User Adoption", severity: "Info", title: "Mobile App Installed but Never Used", description: "Some users installed the app but have not used it.", date: "30-May-2026 14:15", read: true },
+  { id: 16, category: "User Adoption", severity: "Warning", title: "Users Inactive 60 Days", description: "1 user has been inactive for 60 days.", date: "29-May-2026 11:05", read: true },
+  { id: 17, category: "User Adoption", severity: "Critical", title: "Users Inactive 90 Days", description: "1 user has been inactive for 90 days.", date: "28-May-2026 09:50", read: true },
+  { id: 18, category: "System", severity: "Info", title: "Announcement", description: "New asset management tips are available.", date: "27-May-2026 16:20", read: true }
+];
+
 const state = {
   mode: "landing",
-  webPage: "asset",
+  webPage: "home",
   webReportType: "rep-asset-register",
   webColumnSettingsOpen: false,
   webReportAdvancedOpen: false,
+  webRecentOpen: false,
+  webDashAssetDimension: "category",
+  webDashOperationPeriod: "year",
+  webDashSections: {
+    asset: true,
+    agreement: true,
+    operation: true
+  },
   webReportHiddenColumns: {},
   reportsOpen: false,
   mobilePage: "home",
@@ -138,6 +167,12 @@ const state = {
   reportPreviewPage: 1,
   reportTemplatePreviewPage: 1,
   reportCriteria: {},
+  inboxItems: inboxSeed.map((item) => ({ ...item })),
+  inboxShowUnreadOnly: true,
+  inboxPageSize: 10,
+  selectedInboxId: null,
+  mobileInboxLimit: 5,
+  notificationOpen: false,
   moreMenuOpen: false,
   template: {
     templateType: "asset-label",
@@ -303,6 +338,7 @@ function renderWeb() {
             <span class="top-brand">iReap Asset</span>
           </div>
           <div class="top-links">
+            ${renderNotificationBell("web")}
             <button class="top-link" data-action="mock-only">Profile</button>
             <button class="top-link" data-action="mock-only">Language</button>
             <button class="top-link" data-action="mock-only">Support</button>
@@ -317,13 +353,20 @@ function renderWeb() {
           ${renderWebPage()}
         </section>
       </main>
-      ${state.modal === "assetLookup" ? renderAssetLookupModal() : state.modal === "retirementAssetLookup" ? renderRetirementAssetLookupModal() : state.modal ? renderPrintModal() : ""}
+      ${state.modal === "assetLookup" ? renderAssetLookupModal() : state.modal === "retirementAssetLookup" ? renderRetirementAssetLookupModal() : state.modal === "technicalNotes" ? renderTechnicalNotesModal() : state.modal === "inboxDetail" ? renderInboxDetailModal() : state.modal ? renderPrintModal() : ""}
+      ${state.notificationOpen === "web" ? renderNotificationDropdown("web") : ""}
       ${state.toast ? `<div class="mock-toast">${state.toast}</div>` : ""}
     </div>
   `;
 }
 
 function webPageMeta() {
+  if (state.webPage === "home") {
+    return { title: "Dashboard", breadcrumb: "Home <span>/</span> <strong>Dashboard</strong>" };
+  }
+  if (state.webPage === "asset") {
+    return { title: "Asset", breadcrumb: "Home <span>/</span> Asset <span>/</span> <strong>Asset List</strong>" };
+  }
   if (state.webPage === "transfer") {
     return { title: "Transfer Asset", breadcrumb: "Home <span>/</span> Operations <span>/</span> <strong>Transfer Asset</strong>" };
   }
@@ -365,6 +408,9 @@ function webPageMeta() {
     const meta = currentReportMetaFor(state.webReportType);
     return { title: `${meta.name} PDF Preview`, breadcrumb: `Home <span>/</span> Reports <span>/</span> ${meta.name} <span>/</span> <strong>PDF Preview</strong>` };
   }
+  if (state.webPage === "inbox") {
+    return { title: "Inbox", breadcrumb: "Home <span>/</span> <strong>Inbox</strong>" };
+  }
   return { title: "Asset", breadcrumb: "Home <span>/</span> Asset <span>/</span> <strong>Asset</strong>" };
 }
 
@@ -372,6 +418,7 @@ function renderSidebar() {
   const isAsset = state.webPage === "asset" || state.webPage === "assetDetail" || state.webPage === "mass" || state.webPage === "preview";
   const isOperations = state.webPage === "transfer" || state.webPage === "transferNew" || state.webPage === "transferView" || state.webPage === "retirement" || state.webPage === "retirementNew" || state.webPage === "retirementView" || state.webPage === "transactionPreview";
   const isTemplates = state.webPage === "templates";
+  const isInbox = state.webPage === "inbox";
   const isReports = state.webPage === "webReport" || state.webPage === "webReportPdf";
   const assetOpen = state.assetOpen;
   const operationsOpen = state.operationsOpen;
@@ -394,6 +441,7 @@ function renderSidebar() {
       </div>
       <nav class="side-nav">
         <button class="side-item" data-action="web-page" data-page="home"><span class="side-icon">H</span>Home</button>
+        <button class="side-item ${isInbox ? "active" : ""}" data-action="web-page" data-page="inbox"><span class="side-icon">I</span>Inbox</button>
         <div class="side-section">
           <button class="side-item ${isAsset ? "active" : ""}" data-action="toggle-asset"><span class="side-icon">A</span>Asset <span class="side-caret">${assetOpen ? "v" : ">"}</span></button>
           ${assetOpen ? `
@@ -454,22 +502,414 @@ function renderWebPage() {
   if (state.webPage === "webReport") return renderWebReportPage();
   if (state.webPage === "webReportPdf") return renderWebReportPdfPreview();
   if (state.webPage === "home") return renderWebHome();
+  if (state.webPage === "inbox") return renderWebInbox();
   return renderAssetList();
 }
 
 function renderWebHome() {
+  const assetDimension = state.webDashAssetDimension;
+  const assetCountData = webAssetInsightData(assetDimension, "count");
+  const assetValueData = webAssetInsightData(assetDimension, "value");
+  const agreementTypes = [
+    { label: "Warranty", raw: 21, val: "21", report: "rep-agreement", type: "Warranty", action: "web-dashboard-report" },
+    { label: "Insurance", raw: 15, val: "15", report: "rep-agreement", type: "Insurance", action: "web-dashboard-report" },
+    { label: "Contract / License", raw: 11, val: "11", report: "rep-agreement", type: "Contract / License", action: "web-dashboard-report" }
+  ];
+  const agreementStatus = [
+    { label: "Active", raw: 38, val: "38", report: "rep-agreement", status: "Active", action: "web-dashboard-report" },
+    { label: "Expiring", raw: 5, val: "5", report: "rep-agreement", status: "Expiring Soon", action: "web-dashboard-report" },
+    { label: "Expired", raw: 4, val: "4", report: "rep-agreement", status: "Expired", action: "web-dashboard-report" }
+  ];
+  const expiryBuckets = [
+    { label: "0-30", raw: 5, val: "5", report: "rep-agreement", expiring: "Next 30 Days", action: "web-dashboard-report", color: "#f59e0b" },
+    { label: "31-60", raw: 3, val: "3", report: "rep-agreement", expiring: "31-60 Days", action: "web-dashboard-report", color: "#5b8cf5" },
+    { label: "61-90", raw: 2, val: "2", report: "rep-agreement", expiring: "61-90 Days", action: "web-dashboard-report", color: "#4fb7a8" },
+    { label: "90+", raw: 8, val: "8", report: "rep-agreement", expiring: "After 90 Days", action: "web-dashboard-report", color: "#8b63d9" }
+  ];
+  const operationData = webOperationInsightData(state.webDashOperationPeriod);
   return `
-    <div class="content-card">
-      <div class="action-row">
-        <button class="btn primary" data-action="web-page" data-page="asset">Open Asset List</button>
-        <button class="btn secondary" data-action="web-page" data-page="templates">Print Templates</button>
+    <div class="web-dashboard">
+      <section class="web-dashboard-section">
+        <div class="web-section-head">
+          <div>
+            <h2>Overview</h2>
+            <p>Current asset status and report shortcuts.</p>
+          </div>
+        </div>
+        <div class="web-overview-grid">
+          ${webDashboardKpi("Total Assets", "142", "Asset Register", "rep-asset-register", { field: "assetStatus", value: "All" }, "m-blue")}
+          ${webDashboardKpi("Total Asset Value", "IDR 2.4B", "Asset Register", "rep-asset-register", { field: "assetStatus", value: "All" }, "m-teal")}
+          ${webDashboardKpi("Active Agreements", "38", "Agreement Report", "rep-agreement", { status: "Active" }, "m-purple")}
+          ${webDashboardKpi("Expiring Soon", "5", "Agreement Report", "rep-agreement", { status: "Expiring Soon" }, "m-orange")}
+        </div>
+      </section>
+
+      <section class="web-dashboard-section">
+        <div class="web-section-head">
+          <div>
+            <h2>Attention Required</h2>
+            <p>Issues that may require follow-up.</p>
+          </div>
+        </div>
+        <div class="web-attention-grid">
+          ${webAttentionCard("Assets Without Photo", "18", "Complete asset documentation", "rep-data-quality", { issue: "without-photo" }, "warning")}
+          ${webAttentionCard("Assets Without Value", "31", "Review acquisition value data", "rep-data-quality", { issue: "without-value" }, "danger")}
+          ${webAttentionCard("Assets Without Attachment", "9", "No attachment or document file.", "rep-data-quality", { issue: "without-attachment" }, "warning")}
+          ${webAttentionCard("Expiring Within 30 Days", "5", "Review upcoming agreement expiry", "rep-agreement", { expiring: "Next 30 Days" }, "warning")}
+          ${webAttentionCard("Uncovered Assets", "12", "No active warranty, insurance, contract, or license.", "rep-agreement", { coverage: "Uncovered" }, "danger")}
+        </div>
+      </section>
+
+      <section class="web-dashboard-section">
+        <div class="web-section-head">
+          <div>
+            <h2>Analytics</h2>
+            <p>High-level monitoring. Drill into reports for detailed analysis.</p>
+          </div>
+        </div>
+        <div class="web-analytics-grid">
+          ${webDashboardSectionPanel("asset", "Asset Insights", webAssetDimensionToggle(), `
+            <div class="web-paired-insights">
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Asset Count by ${assetDimensionLabel(assetDimension)}</div>
+                ${donutChart(assetCountData, "142", "Assets")}
+              </div>
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Asset Value by ${assetDimensionLabel(assetDimension)}</div>
+                ${horizontalBarChart(assetValueData)}
+              </div>
+            </div>
+          `)}
+          ${webDashboardSectionPanel("agreement", "Agreement Insights", "", `
+            <div class="web-three-insights">
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Agreements by Type</div>
+                ${donutChart(agreementTypes, "47", "Agreements")}
+              </div>
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Agreements by Status</div>
+                ${donutChart(agreementStatus, "47", "Agreements")}
+              </div>
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Agreement Expiry Timeline</div>
+                ${columnChart(expiryBuckets)}
+              </div>
+            </div>
+          `)}
+          ${webDashboardSectionPanel("operation", "Operation Insights", webOperationPeriodToggle(), `
+            <div class="web-three-insights">
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Transfer Trend</div>
+                ${trendColumnChart(operationData.transferTrend, "#5b8cf5")}
+              </div>
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Retirement Trend</div>
+                ${trendColumnChart(operationData.retirementTrend, "#e8736b")}
+              </div>
+              <div class="web-dashboard-chart">
+                <div class="dash-chart-label">Retirement by Reason</div>
+                ${columnChart(operationData.retirementReasons)}
+              </div>
+            </div>
+          `)}
+        </div>
+      </section>
+
+      <section class="web-dashboard-section recent-section">
+        <button class="web-recent-toggle" data-action="toggle-web-recent">
+          <span>Recent Activities</span>
+          <em>${state.webRecentOpen ? "Hide" : "Show"}</em>
+        </button>
+        ${state.webRecentOpen ? `
+          <div class="web-recent-grid">
+            ${webRecentList("Recent Assets", [
+              { main: "LAPTOP-001", sub: "Lenovo ThinkPad", page: "assetDetail", assetId: 216 },
+              { main: "CHAIR-001", sub: "Office Chair", page: "assetDetail", assetId: 217 },
+              { main: "DESK-001", sub: "Working Desk", page: "assetDetail", assetId: 219 }
+            ])}
+            ${webRecentList("Recent Agreements", [
+              { main: "WAR-2026-0001", sub: "Laptop Warranty", page: "webReport", report: "rep-agreement", type: "Warranty" },
+              { main: "INS-2026-0001", sub: "Asset Insurance", page: "webReport", report: "rep-agreement", type: "Insurance" }
+            ])}
+            ${webRecentList("Recent Transfers", [
+              { main: "TRF-2026050001", sub: "Head Office to Warehouse", page: "transferView", transferNo: "TRF-2026050001" },
+              { main: "TRF-2026050002", sub: "IT to GA", page: "transferView", transferNo: "TRF-2026050002" }
+            ])}
+            ${webRecentList("Recent Retirements", [
+              { main: "RET-2026050001", sub: "Scrapped - 3 assets", page: "retirementView", retirementNo: "RET-2026050001" }
+            ])}
+          </div>
+        ` : ""}
+      </section>
+    </div>
+  `;
+}
+
+function webDashboardKpi(label, value, reportLabel, report, filters, tone) {
+  return `
+    <button class="web-kpi-card ${tone}" data-action="web-dashboard-report" data-report="${report}" ${webDashboardFilterAttrs(filters)}>
+      <small>${label}</small>
+      <strong>${value}</strong>
+      <span>${reportLabel}</span>
+    </button>
+  `;
+}
+
+function webAttentionCard(title, value, note, report, filters, tone) {
+  return `
+    <button class="web-attention-card ${tone}" data-action="web-dashboard-report" data-report="${report}" ${webDashboardFilterAttrs(filters)}>
+      <div>
+        <strong>${title}</strong>
+        <span>${note}</span>
       </div>
-      <div class="label-grid">
-        <div class="summary-card m-blue"><small>Active Assets</small>1</div>
-        <div class="summary-card m-teal"><small>Active Agreements</small>0</div>
-        <div class="summary-card m-orange"><small>Total Asset Value</small>IDR 0</div>
-        <div class="summary-card m-red"><small>Expiring Soon</small>0</div>
+      <em>${value}</em>
+    </button>
+  `;
+}
+
+function webDashboardFilterAttrs(filters = {}) {
+  return Object.entries(filters).map(([key, value]) => `data-${key}="${value}"`).join(" ");
+}
+
+function dataQualityIssueLabel(issue) {
+  return {
+    "without-photo": "Without Photo",
+    "without-value": "Without Value",
+    "without-attachment": "Without Attachment"
+  }[issue] || "All";
+}
+
+function dataQualityIssueKey(label) {
+  return {
+    "Without Photo": "without-photo",
+    "Without Value": "without-value",
+    "Without Attachment": "without-attachment"
+  }[label] || "all";
+}
+
+function webRecentList(title, rows) {
+  return `
+    <div class="web-recent-list">
+      <h3>${title}</h3>
+      ${rows.map((row) => `
+        <button data-action="web-recent-view" ${webRecentAttrs(row)}>
+          <strong>${row.main}</strong>
+          <span>${row.sub}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function webRecentAttrs(row) {
+  return Object.entries(row)
+    .filter(([key]) => !["main", "sub"].includes(key))
+    .map(([key, value]) => `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}="${value}"`)
+    .join(" ");
+}
+
+function webDashboardSectionPanel(key, title, controls, content) {
+  const open = state.webDashSections[key];
+  return `
+    <div class="web-insight-panel">
+      <div class="web-insight-head">
+        <button data-action="toggle-web-dashboard-section" data-section="${key}">
+          <span>${title}</span>
+        </button>
+        ${open && controls ? `<div class="web-insight-controls">${controls}</div>` : ""}
+        <button class="web-insight-visibility" data-action="toggle-web-dashboard-section" data-section="${key}">${open ? "Hide" : "Show"}</button>
       </div>
+      ${open ? `
+        ${content}
+      ` : ""}
+    </div>
+  `;
+}
+
+function webAssetDimensionToggle() {
+  return webSegmentedControl("web-dash-asset-dimension", state.webDashAssetDimension, [
+    ["category", "Category"],
+    ["department", "Department"],
+    ["location", "Location"]
+  ]);
+}
+
+function webOperationPeriodToggle() {
+  return webSegmentedControl("web-dash-operation-period", state.webDashOperationPeriod, [
+    ["month", "This Month"],
+    ["year", "This Year"],
+    ["all", "All Time"]
+  ]);
+}
+
+function webSegmentedControl(action, current, options) {
+  return `
+    <div class="web-dash-segment">
+      ${options.map(([value, label]) => `<button class="${current === value ? "active" : ""}" data-action="${action}" data-value="${value}">${label}</button>`).join("")}
+    </div>
+  `;
+}
+
+function assetDimensionLabel(dimension) {
+  return { category: "Category", department: "Department", location: "Location" }[dimension] || "Category";
+}
+
+function webAssetInsightData(dimension, metric) {
+  const data = {
+    count: {
+      category: [
+        ["Electronics", 58, "58"],
+        ["Furniture", 41, "41"],
+        ["Vehicles", 23, "23"],
+        ["Other", 20, "20"]
+      ],
+      department: [
+        ["IT", 45, "45"],
+        ["Admin", 38, "38"],
+        ["GA", 30, "30"],
+        ["Finance", 29, "29"]
+      ],
+      location: [
+        ["Head Office", 72, "72"],
+        ["Warehouse", 46, "46"],
+        ["Branch", 24, "24"]
+      ]
+    },
+    value: {
+      category: [
+        ["Electronics", 1100, "IDR 1.1B"],
+        ["Vehicles", 890, "IDR 890M"],
+        ["Furniture", 220, "IDR 220M"],
+        ["Other", 90, "IDR 90M"]
+      ],
+      department: [
+        ["IT", 980, "IDR 980M"],
+        ["GA", 640, "IDR 640M"],
+        ["Finance", 440, "IDR 440M"],
+        ["Admin", 240, "IDR 240M"]
+      ],
+      location: [
+        ["Head Office", 1450, "IDR 1.45B"],
+        ["Warehouse", 620, "IDR 620M"],
+        ["Branch", 330, "IDR 330M"]
+      ]
+    }
+  };
+  return (data[metric][dimension] || data[metric].category).map(([label, raw, val], index) => ({
+    label,
+    raw,
+    val,
+    report: "rep-asset-register",
+    field: dimension,
+    value: label,
+    action: "web-dashboard-report",
+    color: CHART_COLORS[index % CHART_COLORS.length]
+  }));
+}
+
+function webOperationInsightData(period) {
+  const map = {
+    month: {
+      transferTrend: [
+        { label: "01", val: 2, month: "2026-06" },
+        { label: "07", val: 1, month: "2026-06" },
+        { label: "14", val: 4, month: "2026-06" },
+        { label: "21", val: 3, month: "2026-06" },
+        { label: "28", val: 4, month: "2026-06" }
+      ],
+      retirementTrend: [
+        { label: "01", val: 0, month: "2026-06" },
+        { label: "07", val: 1, month: "2026-06" },
+        { label: "14", val: 0, month: "2026-06" },
+        { label: "21", val: 1, month: "2026-06" },
+        { label: "28", val: 1, month: "2026-06" }
+      ],
+      retirementReasons: [
+        ["Sold", 1],
+        ["Damaged", 1],
+        ["Obsolete", 0],
+        ["Donated", 0],
+        ["Scrapped", 1]
+      ]
+    },
+    year: {
+      transferTrend: [
+        { label: "Jan", val: 6, month: "2026-01" },
+        { label: "Feb", val: 8, month: "2026-02" },
+        { label: "Mar", val: 5, month: "2026-03" },
+        { label: "Apr", val: 10, month: "2026-04" },
+        { label: "May", val: 12, month: "2026-05" },
+        { label: "Jun", val: 14, month: "2026-06" }
+      ],
+      retirementTrend: [
+        { label: "Jan", val: 1, month: "2026-01" },
+        { label: "Feb", val: 2, month: "2026-02" },
+        { label: "Mar", val: 1, month: "2026-03" },
+        { label: "Apr", val: 3, month: "2026-04" },
+        { label: "May", val: 2, month: "2026-05" },
+        { label: "Jun", val: 3, month: "2026-06" }
+      ],
+      retirementReasons: [
+        ["Sold", 3],
+        ["Damaged", 4],
+        ["Obsolete", 2],
+        ["Donated", 1],
+        ["Scrapped", 2]
+      ]
+    },
+    all: {
+      transferTrend: [
+        { label: "2022", val: 44, year: "2022" },
+        { label: "2023", val: 58, year: "2023" },
+        { label: "2024", val: 63, year: "2024" },
+        { label: "2025", val: 71, year: "2025" },
+        { label: "2026", val: 55, year: "2026" }
+      ],
+      retirementTrend: [
+        { label: "2022", val: 8, year: "2022" },
+        { label: "2023", val: 11, year: "2023" },
+        { label: "2024", val: 15, year: "2024" },
+        { label: "2025", val: 13, year: "2025" },
+        { label: "2026", val: 12, year: "2026" }
+      ],
+      retirementReasons: [
+        ["Sold", 12],
+        ["Damaged", 18],
+        ["Obsolete", 10],
+        ["Donated", 4],
+        ["Scrapped", 15]
+      ]
+    }
+  };
+  const data = map[period] || map.year;
+  return {
+    transferTrend: data.transferTrend.map((item) => ({ ...item, report: "rep-asset-movement", action: "web-dashboard-report" })),
+    retirementTrend: data.retirementTrend.map((item) => ({ ...item, report: "rep-asset-retirement", action: "web-dashboard-report" })),
+    retirementReasons: data.retirementReasons.map(([label, raw], index) => ({
+      label,
+      raw,
+      val: String(raw),
+      report: "rep-asset-retirement",
+      reason: label,
+      action: "web-dashboard-report",
+      ...(period === "month" ? { month: "2026-06" } : {}),
+      ...(period === "year" ? { year: "2026" } : {}),
+      color: CHART_COLORS[index % CHART_COLORS.length]
+    }))
+  };
+}
+
+function horizontalBarChart(items) {
+  const max = Math.max(...items.map((item) => item.raw), 1);
+  return `
+    <div class="horizontal-bars">
+      ${items.map((item) => `
+        <button class="horizontal-bar-row" ${dashboardAttrs(item)}>
+          <span>${item.label}</span>
+          <div><i style="width:${Math.max(8, Math.round((item.raw / max) * 100))}%;background:${item.color || "#5b8cf5"}"></i></div>
+          <strong>${item.val}</strong>
+        </button>
+      `).join("")}
     </div>
   `;
 }
@@ -733,7 +1173,7 @@ function webReportSummaryItems(reportType) {
     "rep-asset-movement": [["Total Transfers", "14"], ["Department Transfers", "6"], ["Location Transfers", "8"], ["Total Assets Moved", "41"]],
     "rep-asset-retirement": [["Total Retirements", "12"], ["Sold", "3"], ["Damaged", "4"], ["Obsolete", "2"], ["Donated", "1"], ["Scrapped", "2"]],
     "rep-agreement": [["Total Agreements", "47"], ["Active", "38"], ["Expired", "4"], ["Expiring Soon", "5"], ["Warranty", "21"], ["Insurance", "15"], ["Contract / License", "11"]],
-    "rep-data-quality": [["Without Photo", "18"], ["Without Value", "31"]]
+    "rep-data-quality": [["Without Photo", "18"], ["Without Value", "31"], ["Without Attachment", "9"]]
   };
   return map[reportType] || [];
 }
@@ -777,7 +1217,8 @@ function renderWebDataQualityGrid() {
   const rows = [
     [assets[0], ["Without Photo"]],
     [assets[1], ["Without Value"]],
-    [assets[2], ["Without Photo", "Without Value"]],
+    [assets[2], ["Without Photo", "Without Value", "Without Attachment"]],
+    [assets[3], ["Without Attachment"]],
     [assets[4], ["Without Value"]]
   ].map(([asset, issues], index) => ({
     no: index + 1,
@@ -972,7 +1413,7 @@ function webReportRowCount(reportType) {
   }
   return {
     "rep-asset-register": assets.length,
-    "rep-data-quality": 4,
+    "rep-data-quality": 5,
     "rep-agreement": 4,
     "rep-asset-movement": transfers.length,
     "rep-asset-retirement": retirements.length
@@ -995,6 +1436,252 @@ function renderWebReportPdfPreview() {
         <h2>${meta.name}</h2>
         ${renderPageNavigator("web-report-preview-page", currentPage, pages.length)}
         ${pages[currentPage - 1]}
+      </div>
+    </div>
+  `;
+}
+
+function unreadInboxItems() {
+  return state.inboxItems.filter((item) => !item.read);
+}
+
+function unreadBadgeText() {
+  const count = unreadInboxItems().length;
+  if (!count) return "";
+  return count > 99 ? "99+" : String(count);
+}
+
+function renderNotificationBell(surface) {
+  const badge = unreadBadgeText();
+  return `
+    <button class="${surface === "web" ? "notification-bell web" : "mobile-icon-btn notification-bell"}" data-action="toggle-notifications" data-surface="${surface}" title="Notifications">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      ${badge ? `<span class="notification-badge">${badge}</span>` : ""}
+    </button>
+  `;
+}
+
+function renderNotificationDropdown(surface) {
+  const items = unreadInboxItems().slice(0, 5);
+  return `
+    <div class="notification-dropdown ${surface}">
+      <strong>Notifications</strong>
+      ${items.length ? items.map((item) => `
+        <button data-action="open-inbox-item" data-id="${item.id}">
+          <span>${item.title}</span>
+          <em>${item.category}</em>
+        </button>
+      `).join("") : `<p>No unread notifications.</p>`}
+      <button class="show-all" data-action="open-inbox" data-tab="unread">Go To Inbox</button>
+    </div>
+  `;
+}
+
+function renderWebInbox() {
+  const items = inboxItemsForCurrentTab();
+  const visible = items.slice(0, state.inboxPageSize);
+  const hasUnread = unreadInboxItems().length > 0;
+  return `
+    <div class="content-card inbox-page">
+      <div class="inbox-head">
+        <div class="inbox-actions">
+          <span>Show</span>
+          <select data-field="inbox-page-size" aria-label="Show Entries">
+            ${[10, 25, 50].map((size) => `<option value="${size}" ${state.inboxPageSize === size ? "selected" : ""}>${size}</option>`).join("")}
+          </select>
+          <span>Entries</span>
+          <label class="inbox-unread-toggle">
+            <input type="checkbox" data-action="toggle-inbox-unread" ${state.inboxShowUnreadOnly ? "checked" : ""}>
+            Show unread only
+          </label>
+        </div>
+        <div class="inbox-actions">
+          ${hasUnread ? `<button class="btn ghost" data-action="mark-all-inbox-read">Mark All as Read</button>` : ""}
+          <button class="btn ghost" data-action="open-technical-notes">Technical Notes</button>
+        </div>
+      </div>
+      <table class="data-table inbox-table">
+        <thead><tr><th>Category</th><th>Severity</th><th>Title</th><th>Date</th></tr></thead>
+        <tbody>
+          ${visible.map((item) => `
+            <tr class="${item.read ? "read" : "unread"}" data-action="open-inbox-item" data-id="${item.id}">
+              <td>${item.category}</td>
+              <td><span class="severity ${item.severity.toLowerCase()}">${item.severity}</span></td>
+              <td><strong>${item.title}</strong><span>${item.description}</span></td>
+              <td>${item.date}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      <div class="table-footer">
+        <span>Showing ${items.length ? 1 : 0} To ${Math.min(visible.length, items.length)} Of ${items.length} Entries</span>
+        <div class="pagination"><button>Previous</button><button>1</button><button>Next</button></div>
+      </div>
+    </div>
+  `;
+}
+
+function inboxItemsForCurrentTab() {
+  return state.inboxShowUnreadOnly ? unreadInboxItems() : state.inboxItems;
+}
+
+const technicalNoteTabs = [
+  {
+    id: "architecture",
+    label: "Architecture",
+    content: `
+      <h4>Inbox Architecture</h4>
+      <p>Inbox acts as the master event repository.</p>
+      <ul>
+        <li>Notification Bell displays unread inbox items from the Inbox repository.</li>
+        <li>Mobile and Web share the same Inbox data source.</li>
+      </ul>
+    `
+  },
+  {
+    id: "agreement",
+    label: "Agreement",
+    content: `
+      <h4>Agreement Notifications</h4>
+      <p>Agreement reminders are controlled through Agreement Setup. Reminder timing is configurable per agreement type.</p>
+      <p><strong>Reminder examples:</strong></p>
+      <ul>
+        <li>90 Days Before Expiry</li>
+        <li>30 Days Before Expiry</li>
+        <li>7 Days Before Expiry</li>
+      </ul>
+      <p><strong>Supported Inbox events:</strong></p>
+      <ul>
+        <li>Agreement Expiring Soon</li>
+        <li>Agreement Expired</li>
+      </ul>
+      <p class="tn-note">These events may also trigger mobile push notifications.</p>
+    `
+  },
+  {
+    id: "subscription",
+    label: "Subscription",
+    content: `
+      <h4>Subscription Notifications</h4>
+      <p><strong>Supported Inbox events:</strong></p>
+      <ul>
+        <li>Trial Expiring Soon</li>
+        <li>Trial Expired</li>
+        <li>Subscription Expiring Soon</li>
+        <li>Subscription Expired</li>
+        <li>Subscription Order Created</li>
+        <li>Subscription Activated</li>
+        <li>Subscription Order Expired</li>
+        <li>Payment Failed</li>
+      </ul>
+      <p class="tn-note"><strong>Note:</strong> Subscription Order Expired is triggered when payment is not completed within 24 hours after order creation. Users must create a new order after the previous order expires.</p>
+      <p class="tn-note">These events may also trigger mobile push notifications.</p>
+    `
+  },
+  {
+    id: "adoption",
+    label: "User Adoption",
+    content: `
+      <h4>User Adoption Monitoring</h4>
+      <p>The system may generate administrator-only mobile push notifications to help monitor application adoption and usage.</p>
+      <p><strong>Examples:</strong></p>
+      <ul>
+        <li>Users Never Logged In</li>
+        <li>Mobile App Installed but Never Used</li>
+        <li>Users Inactive for 30 Days</li>
+        <li>Users Inactive for 60 Days</li>
+        <li>Users Inactive for 90 Days</li>
+      </ul>
+      <p><strong>Intended recipients:</strong> Tenant Owner · Administrator · Manager</p>
+      <p class="tn-note tn-warn">These alerts do NOT create Inbox records and do NOT appear in Notification Bell. Delivered via mobile push notifications only.</p>
+    `
+  },
+  {
+    id: "system",
+    label: "System",
+    content: `
+      <h4>System Notifications</h4>
+      <p><strong>Supported Inbox events:</strong></p>
+      <ul>
+        <li>Announcement</li>
+        <li>Scheduled Maintenance</li>
+        <li>New Feature Available</li>
+      </ul>
+      <p class="tn-note">These events may also trigger mobile push notifications depending on importance and system configuration.</p>
+    `
+  },
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    content: `
+      <h4>Dashboard Monitoring vs Inbox Events</h4>
+      <p>The following items are monitoring conditions and should remain within Dashboard and Reports. They should <strong>NOT</strong> generate recurring Inbox notifications.</p>
+      <p><strong>Examples:</strong></p>
+      <ul>
+        <li>Assets Without Photo</li>
+        <li>Assets Without Value</li>
+        <li>Assets Without Attachment</li>
+        <li>Uncovered Assets</li>
+      </ul>
+      <p class="tn-note">These conditions may remain unresolved for long periods and could create repetitive or unnecessary notifications.</p>
+    `
+  },
+  {
+    id: "retention",
+    label: "Retention",
+    content: `
+      <h4>Inbox Retention</h4>
+      <p><strong>Suggested retention period:</strong> 365 Days</p>
+      <p><strong>Users may:</strong></p>
+      <ul>
+        <li>Mark as Read</li>
+      </ul>
+      <p class="tn-note">Manual deletion is not required. Older records may be automatically purged by the system.</p>
+    `
+  }
+];
+
+function renderTechnicalNotesModal() {
+  const active = state.technicalNoteTab || "architecture";
+  const tab = technicalNoteTabs.find(t => t.id === active) || technicalNoteTabs[0];
+  return `
+    <div class="modal-backdrop">
+      <div class="modal technical-modal" role="dialog" aria-modal="true" aria-label="Technical Notes">
+        <div class="modal-head">Technical Notes</div>
+        <div class="tn-tabs">
+          ${technicalNoteTabs.map(t => `
+            <button class="tn-tab ${t.id === active ? "active" : ""}" data-action="switch-tn-tab" data-tab="${t.id}">${t.label}</button>
+          `).join("")}
+        </div>
+        <div class="modal-body tn-body">${tab.content}</div>
+        <div class="modal-actions"><button class="btn primary" data-action="close-modal">Close</button></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInboxDetailModal() {
+  const item = state.inboxItems.find((entry) => entry.id === state.selectedInboxId);
+  if (!item) return "";
+  const target = inboxTargetFor(item);
+  return `
+    <div class="modal-backdrop">
+      <div class="modal technical-modal inbox-detail-modal" role="dialog" aria-modal="true" aria-label="Inbox Detail">
+        <div class="modal-head">Inbox Detail</div>
+        <div class="modal-body">
+          <div class="inbox-detail-meta">
+            <span>${item.category}</span>
+            <span class="severity ${item.severity.toLowerCase()}">${item.severity}</span>
+            <span>${item.date}</span>
+          </div>
+          <h3>${item.title}</h3>
+          <p>${item.description}</p>
+          <p class="inbox-detail-note">This mockup item is displayed as an inbox event detail.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" data-action="close-modal">Cancel</button>
+          ${target ? `<button class="btn primary" data-action="inbox-target" data-id="${item.id}">${target.label}</button>` : ""}
+        </div>
       </div>
     </div>
   `;
@@ -2113,6 +2800,8 @@ function renderMobile() {
         <div class="phone-screen">
           ${renderMobileScreen()}
           ${state.mobileSheet ? renderMobileSheet() : ""}
+          ${state.modal === "technicalNotes" ? renderTechnicalNotesModal() : ""}
+          ${state.modal === "inboxDetail" ? renderInboxDetailModal() : ""}
           ${state.toast ? `<div class="mock-toast">${state.toast}</div>` : ""}
         </div>
       </section>
@@ -2136,6 +2825,7 @@ function renderMobileScreen() {
   if (state.mobilePage === "preview") return renderMobilePreview();
   if (state.mobilePage === "dashboard") return renderMobileDashboard();
   if (state.mobilePage === "reports") return renderMobileReports();
+  if (state.mobilePage === "inbox") return renderMobileInbox();
   if (state.mobilePage === "reportCriteria") return renderReportCriteria();
   if (state.mobilePage === "reportSummary") return renderReportSummary();
   if (state.mobilePage === "reportPreview") return renderReportPreview();
@@ -2156,9 +2846,7 @@ function renderMobileHome() {
       <div class="mobile-home-top">
         <div class="mobile-title">iReap Asset</div>
         <div class="mobile-icons">
-          <button class="mobile-icon-btn" data-action="mock-only" title="Notifications">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          </button>
+          ${renderNotificationBell("mobile")}
           <button class="mobile-icon-btn" data-action="toggle-more-menu" title="More">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </button>
@@ -2173,6 +2861,7 @@ function renderMobileHome() {
           <button class="more-menu-item logout" data-action="landing">Logout</button>
         </div>
       ` : ""}
+      ${state.notificationOpen === "mobile" ? renderNotificationDropdown("mobile") : ""}
     </div>
     <div class="home-scroll">
     <div class="mobile-user-card">
@@ -2299,7 +2988,7 @@ function trendColumnChart(series, color) {
 function dashboardAttrs(item) {
   if (!item.report) return "";
   const attrs = [
-    `data-action="dashboard-report"`,
+    `data-action="${item.action || "dashboard-report"}"`,
     `data-report="${item.report}"`
   ];
   if (item.field) attrs.push(`data-field="${item.field}"`);
@@ -2309,6 +2998,8 @@ function dashboardAttrs(item) {
   if (item.type) attrs.push(`data-type="${item.type}"`);
   if (item.expiring) attrs.push(`data-expiring="${item.expiring}"`);
   if (item.month) attrs.push(`data-month="${item.month}"`);
+  if (item.year) attrs.push(`data-year="${item.year}"`);
+  if (item.reason) attrs.push(`data-reason="${item.reason}"`);
   return attrs.join(" ");
 }
 
@@ -2393,6 +3084,9 @@ function renderDashAssets() {
       </button>
       <button class="dq-item" data-action="dashboard-report" data-report="rep-data-quality" data-issue="without-value">
         <span>Without Value</span><span class="dq-badge">31</span>
+      </button>
+      <button class="dq-item" data-action="dashboard-report" data-report="rep-data-quality" data-issue="without-attachment">
+        <span>Without Attachment</span><span class="dq-badge">9</span>
       </button>
     </div>
   `;
@@ -2484,6 +3178,36 @@ function renderMobileReports() {
   `;
 }
 
+function renderMobileInbox() {
+  const items = inboxItemsForCurrentTab();
+  const visible = items.slice(0, state.mobileInboxLimit);
+  const hasUnread = unreadInboxItems().length > 0;
+  return `
+    ${mobileHeader("Inbox", "home", `<button class="mobile-header-help" data-action="open-technical-notes">Notes</button>`)}
+    <div class="screen-content mobile-inbox-screen">
+      <div class="mobile-inbox-top">
+        <label class="inbox-unread-toggle mobile">
+          <input type="checkbox" data-action="toggle-inbox-unread" ${state.inboxShowUnreadOnly ? "checked" : ""}>
+          Show unread only
+        </label>
+        ${hasUnread ? `<button class="mobile-mark-all" data-action="mark-all-inbox-read">Mark All Read</button>` : ""}
+      </div>
+      ${visible.map((item) => `
+        <div class="mobile-inbox-item ${item.read ? "read" : "unread"}" data-action="open-inbox-item" data-id="${item.id}">
+          <div class="inbox-icon">${item.category.charAt(0)}</div>
+          <div>
+            <span>${item.category} · ${item.severity}</span>
+            <strong>${item.title}</strong>
+            <p>${item.description}</p>
+            <small>${item.date} · ${item.read ? "Read" : "Unread"}</small>
+          </div>
+        </div>
+      `).join("") || `<div class="mobile-empty">No inbox items.</div>`}
+      ${visible.length < items.length ? `<button class="mobile-load-more" data-action="load-more-inbox">Load More</button>` : ""}
+    </div>
+  `;
+}
+
 const reportMeta = {
   "rep-asset-register":   { name: "Asset Register",    back: "reports" },
   "rep-asset-movement":   { name: "Asset Movement",    back: "reports" },
@@ -2545,6 +3269,7 @@ const reportDefaults = {
   "rep-agreement": {
     agreementType: "All",
     agreementStatus: "Active",
+    coverageStatus: "All",
     agreementDetailLevel: "Agreement Only",
     asset: "",
     category: "All",
@@ -2588,8 +3313,9 @@ const reportOptions = {
   retirementReason: ["All", "Sold", "Damaged", "Obsolete", "Donated", "Scrapped"],
   agreementType: ["All", "Warranty", "Insurance", "Contract / License"],
   agreementStatus: ["All", "Active", "Expired", "Expiring Soon"],
+  coverageStatus: ["All", "Covered", "Uncovered"],
   expiringWithin: ["No Filter", "Next 30 Days", "31-60 Days", "61-90 Days", "After 90 Days", "Next 60 Days", "Next 90 Days"],
-  issueType: ["All", "Without Photo", "Without Value"]
+  issueType: ["All", "Without Photo", "Without Value", "Without Attachment"]
 };
 
 const reportFieldLabels = {
@@ -2614,6 +3340,7 @@ const reportFieldLabels = {
   retirementDateTo: "Retirement Date To",
   agreementType: "Agreement Type",
   agreementStatus: "Agreement Status",
+  coverageStatus: "Coverage Status",
   expiryDateFrom: "Expiry Date From",
   expiryDateTo: "Expiry Date To",
   expiringWithin: "Expiring Within",
@@ -2639,7 +3366,7 @@ const reportFields = {
     advanced: ["createdBy", "createdDateFrom", "createdDateTo"]
   },
   "rep-agreement": {
-    basic: ["agreementDetailLevel", "agreementType", "agreementStatus", "category", "department", "location", "asset"],
+    basic: ["agreementDetailLevel", "agreementType", "agreementStatus", "coverageStatus", "category", "department", "location", "asset"],
     advanced: ["startDateFrom", "startDateTo", "expiryDateFrom", "expiryDateTo", "expiringWithin", "createdBy", "createdDateFrom", "createdDateTo"]
   },
   "rep-data-quality": {
@@ -2679,7 +3406,7 @@ function openDashboardReport(target) {
   }
 
   if (reportType === "rep-data-quality" && target.dataset.issue) {
-    criteria.issueType = target.dataset.issue === "without-photo" ? "Without Photo" : "Without Value";
+    criteria.issueType = dataQualityIssueLabel(target.dataset.issue);
     state.reportIssueFilter = target.dataset.issue;
   }
 
@@ -2707,12 +3434,264 @@ function openDashboardReport(target) {
   setState({ mobilePage: "reportPreview" });
 }
 
+function openWebDashboardReport(target) {
+  const payload = dashboardPayloadFromDataset(target.dataset);
+  const key = `ireap-dashboard-report-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(key, JSON.stringify(payload));
+  const url = new URL(window.location.href);
+  url.searchParams.set("dashboardReport", key);
+  const opened = window.open(url.toString(), "_blank");
+  if (!opened) {
+    applyWebDashboardReportPayload(payload);
+    setState({ webPage: "webReport" });
+  }
+}
+
+function dashboardPayloadFromDataset(dataset) {
+  return {
+    report: dataset.report,
+    field: dataset.field,
+    value: dataset.value,
+    issue: dataset.issue,
+    status: dataset.status,
+    type: dataset.type,
+    expiring: dataset.expiring,
+    coverage: dataset.coverage,
+    month: dataset.month,
+    year: dataset.year,
+    reason: dataset.reason
+  };
+}
+
+function applyWebDashboardReportPayload(payload) {
+  const reportType = payload.report;
+  state.mode = "web";
+  state.webReportType = reportType;
+  state.reportType = reportType;
+  state.webReportAdvancedOpen = false;
+  state.webColumnSettingsOpen = false;
+  setReportDefaults(reportType);
+  const criteria = ensureReportCriteria(reportType);
+
+  if (reportType === "rep-asset-register") {
+    if (payload.field) criteria[payload.field] = payload.value;
+    if (payload.status) criteria.assetStatus = payload.status;
+  }
+
+  if (reportType === "rep-data-quality" && payload.issue) {
+    criteria.issueType = dataQualityIssueLabel(payload.issue);
+  }
+
+  if (reportType === "rep-agreement") {
+    if (payload.status) criteria.agreementStatus = payload.status;
+    if (payload.type) criteria.agreementType = payload.type;
+    if (payload.coverage) criteria.coverageStatus = payload.coverage;
+    if (payload.expiring) {
+      criteria.agreementStatus = "Active";
+      criteria.expiringWithin = payload.expiring;
+    }
+  }
+
+  if (reportType === "rep-asset-movement" && payload.month) {
+    const range = monthRange(payload.month);
+    criteria.transferDateFrom = range.from;
+    criteria.transferDateTo = range.to;
+  }
+  if (reportType === "rep-asset-movement" && payload.year) {
+    const range = yearRange(payload.year);
+    criteria.transferDateFrom = range.from;
+    criteria.transferDateTo = range.to;
+  }
+
+  if (reportType === "rep-asset-retirement" && payload.month) {
+    const range = monthRange(payload.month);
+    criteria.retirementDateFrom = range.from;
+    criteria.retirementDateTo = range.to;
+  }
+  if (reportType === "rep-asset-retirement" && payload.year) {
+    const range = yearRange(payload.year);
+    criteria.retirementDateFrom = range.from;
+    criteria.retirementDateTo = range.to;
+  }
+
+  if (reportType === "rep-asset-retirement" && payload.reason) {
+    criteria.retirementReason = payload.reason;
+  }
+}
+
+function hydrateWebDashboardDrilldown() {
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get("dashboardReport");
+  if (!key) return;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    applyWebDashboardReportPayload(JSON.parse(raw));
+    state.webPage = "webReport";
+    localStorage.removeItem(key);
+    params.delete("dashboardReport");
+    const url = `${window.location.pathname}${params.toString() ? `?${params}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", url);
+  } catch (error) {
+    console.warn("Unable to open dashboard report drilldown", error);
+  }
+}
+
+function openWebRecentView(target) {
+  const payload = {
+    page: target.dataset.page,
+    assetId: target.dataset.assetId,
+    transferNo: target.dataset.transferNo,
+    retirementNo: target.dataset.retirementNo,
+    report: target.dataset.report,
+    type: target.dataset.type
+  };
+  const key = `ireap-recent-view-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(key, JSON.stringify(payload));
+  const url = new URL(window.location.href);
+  url.searchParams.set("recentView", key);
+  const opened = window.open(url.toString(), "_blank");
+  if (!opened) {
+    applyWebRecentViewPayload(payload);
+    render();
+  }
+}
+
+function applyWebRecentViewPayload(payload) {
+  state.mode = "web";
+  if (payload.page === "assetDetail") {
+    state.selectedAssetId = Number(payload.assetId);
+    state.assetTab = "detail";
+    state.webPage = "assetDetail";
+    return;
+  }
+  if (payload.page === "transferView") {
+    const transfer = transfers.find((item) => item.no === payload.transferNo) || transferDefaults;
+    state.transferViewNo = transfer.no;
+    state.transferViewIds = [...transfer.assetIds];
+    state.webPage = "transferView";
+    return;
+  }
+  if (payload.page === "retirementView") {
+    const retirement = retirements.find((item) => item.no === payload.retirementNo) || retirementDefaults;
+    state.retirementViewNo = retirement.no;
+    state.retirementViewIds = [...retirement.assetIds];
+    state.webPage = "retirementView";
+    return;
+  }
+  if (payload.page === "webReport" && payload.report) {
+    state.webReportType = payload.report;
+    state.reportType = payload.report;
+    setReportDefaults(payload.report);
+    if (payload.report === "rep-agreement" && payload.type) {
+      ensureReportCriteria(payload.report).agreementType = payload.type;
+    }
+    state.webPage = "webReport";
+    return;
+  }
+  if (payload.page) {
+    state.webPage = payload.page;
+  }
+}
+
+function hydrateWebRecentView() {
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get("recentView");
+  if (!key) return;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    applyWebRecentViewPayload(JSON.parse(raw));
+    localStorage.removeItem(key);
+    params.delete("recentView");
+    const url = `${window.location.pathname}${params.toString() ? `?${params}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", url);
+  } catch (error) {
+    console.warn("Unable to open recent activity", error);
+  }
+}
+
+function openInboxItem(id) {
+  const item = state.inboxItems.find((entry) => entry.id === Number(id));
+  if (!item) return;
+  item.read = true;
+  state.notificationOpen = false;
+  state.selectedInboxId = item.id;
+  state.modal = "inboxDetail";
+  render();
+}
+
+function inboxTargetFor(item) {
+  if (item.category === "Agreement") {
+    return {
+      label: "Go to Report",
+      report: "rep-agreement",
+      status: item.title.includes("Expired") ? "Expired" : "Expiring Soon"
+    };
+  }
+  if (item.category === "Subscription") {
+    return { label: "Go to Subscription", page: "templates" };
+  }
+  return null;
+}
+
+function openInboxTarget(id) {
+  const item = state.inboxItems.find((entry) => entry.id === Number(id));
+  const target = item ? inboxTargetFor(item) : null;
+  if (!target) return;
+  state.modal = null;
+  if (target.report) {
+    const payload = { report: target.report, status: target.status };
+    const key = `ireap-dashboard-report-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, JSON.stringify(payload));
+    const url = new URL(window.location.href);
+    url.searchParams.set("dashboardReport", key);
+    const opened = window.open(url.toString(), "_blank");
+    if (opened) return;
+    if (state.mode === "mobile") {
+      state.reportType = target.report;
+      setReportDefaults(target.report);
+      ensureReportCriteria(target.report).agreementStatus = target.status;
+      state.reportSource = "inbox";
+      state.reportPreviewPage = 1;
+      setState({ mobilePage: "reportPreview" });
+      return;
+    }
+    applyWebDashboardDrilldownPayload(payload);
+    render();
+    return;
+  }
+  if (target.page) {
+    if (state.mode === "mobile") {
+      setState({ mobilePage: "setup" });
+      return;
+    }
+    const payload = { page: target.page };
+    const key = `ireap-recent-view-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, JSON.stringify(payload));
+    const url = new URL(window.location.href);
+    url.searchParams.set("recentView", key);
+    const opened = window.open(url.toString(), "_blank");
+    if (!opened) {
+      applyWebRecentViewPayload(payload);
+      render();
+    }
+  }
+}
+
 function monthRange(monthValue) {
   const [year, month] = monthValue.split("-").map(Number);
   const last = new Date(year, month, 0).getDate();
   return {
     from: `${year}-${String(month).padStart(2, "0")}-01`,
     to: `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`
+  };
+}
+
+function yearRange(yearValue) {
+  return {
+    from: `${yearValue}-01-01`,
+    to: `${yearValue}-12-31`
   };
 }
 
@@ -2839,6 +3818,7 @@ function renderReportSummary() {
           <div class="transfer-info-card">
             <div><span>Without Photo</span><strong>18 assets</strong></div>
             <div><span>Without Value</span><strong>31 assets</strong></div>
+            <div><span>Without Attachment</span><strong>9 assets</strong></div>
           </div>
         ` : `
           <div class="transfer-info-card">
@@ -2863,10 +3843,15 @@ function renderReportPreview() {
     { code: "AST-0001", desc: "Laptop Dell",    issue: "Missing Photo"          },
     { code: "AST-0002", desc: "Forklift",       issue: "Missing Purchase Value" },
     { code: "AST-0007", desc: "Office Chair",   issue: "Missing Photo"          },
-    { code: "AST-0011", desc: "Server Rack",    issue: "Missing Purchase Value" }
+    { code: "AST-0011", desc: "Server Rack",    issue: "Missing Purchase Value" },
+    { code: "AST-0015", desc: "Projector",      issue: "Missing Attachment"     }
   ];
   const filtered = isDQ && state.reportIssueFilter !== "all"
-    ? dqSamples.filter(s => (state.reportIssueFilter === "without-photo" ? s.issue === "Missing Photo" : s.issue === "Missing Purchase Value"))
+    ? dqSamples.filter(s => s.issue === {
+      "without-photo": "Missing Photo",
+      "without-value": "Missing Purchase Value",
+      "without-attachment": "Missing Attachment"
+    }[state.reportIssueFilter])
     : dqSamples;
   return `
     ${mobileHeader(meta.name, "reportSummary")}
@@ -3087,7 +4072,8 @@ function renderPdfSummary(reportType) {
     "rep-data-quality": [
       ["Affected Assets", "42"],
       ["Without Photo", "18"],
-      ["Without Value", "31"]
+      ["Without Value", "31"],
+      ["Without Attachment", "9"]
     ]
   }[reportType] || [];
   if (reportType === "rep-agreement") return pdfMatrixSummary(items);
@@ -3222,7 +4208,8 @@ function renderDataQualityPdfDetail() {
   const rows = [
     [assets[0], ["Without Photo"]],
     [assets[1], ["Without Value"]],
-    [assets[2], ["Without Photo", "Without Value"]],
+    [assets[2], ["Without Photo", "Without Value", "Without Attachment"]],
+    [assets[3], ["Without Attachment"]],
     [assets[4], ["Without Value"]]
   ].map(([asset, issues], index) => ({
     no: index + 1,
@@ -4072,6 +5059,7 @@ document.addEventListener("click", (event) => {
 
   if (action === "web-page") {
     state.modal = null;
+    state.notificationOpen = false;
     if (target.dataset.page === "webReport") state.reportType = state.webReportType;
     if (target.dataset.page === "mass") {
       state.massFiltered = false;
@@ -4113,6 +5101,102 @@ document.addEventListener("click", (event) => {
     state.reportType = state.webReportType;
     state.reportPreviewPage = 1;
     setState({ webPage: "webReportPdf" });
+    return;
+  }
+
+  if (action === "toggle-notifications") {
+    state.notificationOpen = state.notificationOpen === target.dataset.surface ? false : target.dataset.surface;
+    state.moreMenuOpen = false;
+    render();
+    return;
+  }
+
+  if (action === "open-inbox") {
+    state.notificationOpen = false;
+    state.inboxShowUnreadOnly = target.dataset.tab !== "all";
+    state.mobileInboxLimit = 5;
+    if (state.mode === "mobile") {
+      setState({ mobilePage: "inbox" });
+    } else {
+      setState({ webPage: "inbox" });
+    }
+    return;
+  }
+
+  if (action === "toggle-inbox-unread") {
+    state.inboxShowUnreadOnly = event.target.checked;
+    state.mobileInboxLimit = 5;
+    render();
+    return;
+  }
+
+  if (action === "mark-all-inbox-read") {
+    unreadInboxItems().forEach((item) => { item.read = true; });
+    render();
+    return;
+  }
+
+  if (action === "open-inbox-item") {
+    openInboxItem(target.dataset.id);
+    return;
+  }
+
+  if (action === "inbox-target") {
+    openInboxTarget(target.dataset.id);
+    return;
+  }
+
+  if (action === "load-more-inbox") {
+    state.mobileInboxLimit += 5;
+    render();
+    return;
+  }
+
+  if (action === "open-technical-notes") {
+    state.modal = "technicalNotes";
+    state.technicalNoteTab = "architecture";
+    render();
+    return;
+  }
+
+  if (action === "switch-tn-tab") {
+    state.technicalNoteTab = target.dataset.tab;
+    render();
+    return;
+  }
+
+  if (action === "web-dashboard-report") {
+    openWebDashboardReport(target);
+    return;
+  }
+
+  if (action === "toggle-web-recent") {
+    state.webRecentOpen = !state.webRecentOpen;
+    render();
+    return;
+  }
+
+  if (action === "web-recent-view") {
+    openWebRecentView(target);
+    return;
+  }
+
+  if (action === "toggle-web-dashboard-section") {
+    const section = target.dataset.section;
+    state.webDashSections[section] = !state.webDashSections[section];
+    render();
+    return;
+  }
+
+  if (action === "web-dash-asset-dimension") {
+    state.webDashAssetDimension = target.dataset.value;
+    render();
+    return;
+  }
+
+  if (action === "web-dash-operation-period") {
+    state.webDashOperationPeriod = target.dataset.value;
+    render();
     return;
   }
 
@@ -4413,6 +5497,7 @@ document.addEventListener("click", (event) => {
 
   if (action === "toggle-more-menu") {
     state.moreMenuOpen = !state.moreMenuOpen;
+    state.notificationOpen = false;
     render();
     return;
   }
@@ -4456,7 +5541,7 @@ document.addEventListener("click", (event) => {
     state.reportFlow = "criteria";
     setReportDefaults(state.reportType);
     if (state.reportType === "rep-data-quality" && target.dataset.issue) {
-      state.reportCriteria[state.reportType].issueType = target.dataset.issue === "without-photo" ? "Without Photo" : "Without Value";
+      state.reportCriteria[state.reportType].issueType = dataQualityIssueLabel(target.dataset.issue);
     }
     if (state.reportType === "rep-agreement" && target.dataset.issue) {
       state.reportCriteria[state.reportType].agreementStatus = target.dataset.issue === "expired" ? "Expired" : "Expiring Soon";
@@ -4655,6 +5740,11 @@ document.addEventListener("change", (event) => {
     render();
   }
 
+  if (field === "inbox-page-size") {
+    state.inboxPageSize = Number(event.target.value);
+    render();
+  }
+
   if (field === "template-codeType") {
     state.template.codeType = event.target.value;
     render();
@@ -4749,10 +5839,7 @@ document.addEventListener("change", (event) => {
     const criteria = ensureReportCriteria(state.reportType);
     criteria[reportField] = event.target.value;
     if (reportField === "issueType") {
-      state.reportIssueFilter = {
-        "Without Photo": "without-photo",
-        "Without Value": "without-value"
-      }[event.target.value] || "all";
+      state.reportIssueFilter = dataQualityIssueKey(event.target.value);
     }
     render();
   }
@@ -4792,4 +5879,6 @@ document.addEventListener("input", (event) => {
   criteria[reportField] = event.target.value;
 });
 
+hydrateWebDashboardDrilldown();
+hydrateWebRecentView();
 render();
